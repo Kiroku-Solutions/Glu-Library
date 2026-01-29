@@ -11,7 +11,7 @@ public class SonioxOptions
     public const string SectionName = "Soniox";
 
     /// <summary>
-    /// Your secret Soniox API Key.
+    /// Secret Soniox API Key.
     /// </summary>
     public string ApiKey { get; set; } = string.Empty;
 
