@@ -4,88 +4,61 @@ using Glu_Library.Services.Interfaces;
 namespace Glu_Library.Services;
 
 /// <summary>
-/// Manages the state of a transcription session, including finalized segments
-/// and real-time partial updates. Implements basic speaker diarization by
-/// grouping consecutive segments from the same speaker.
+/// Gestiona el estado de la transcripción: segmentos finales y texto parcial en tiempo real.
 /// </summary>
 public class TranscriptStateManager : ITranscriptState
 {
-    // --- 1. Internal State ---
-
-    /// <summary>
-    /// Internal mutable list of finalized speaker segments.
-    /// </summary>
+    // --- Estado Interno ---
     private readonly List<SpeakerSegment> _segments = new();
 
-    /// <summary>
-    /// Read-only view of the finalized transcript segments.
-    /// </summary>
     public IReadOnlyList<SpeakerSegment> Segments => _segments;
-
-    /// <summary>
-    /// Current partial (non-finalized) transcript result.
-    /// Represents live transcription feedback.
-    /// </summary>
     public TranscriptResult? CurrentPartial { get; private set; }
 
-    // --- 2. Events ---
-
-    /// <inheritdoc />
     public event Action? OnStateChanged;
 
-    // --- 3. Core Logic ---
-
-    /// <inheritdoc />
     public void ProcessResult(TranscriptResult result)
     {
+        // Si el resultado es final, lo guardamos en el historial
         if (result.IsFinal)
         {
             AddFinalSegment(result);
-            CurrentPartial = null;
+            CurrentPartial = null; // Limpiamos el parcial porque ya se confirmó
         }
         else
         {
+            // Si es parcial, solo actualizamos la vista temporal
             CurrentPartial = result;
         }
 
         NotifyStateChanged();
     }
 
-    /// <summary>
-    /// Applies diarization logic by merging consecutive results
-    /// from the same speaker into a single segment.
-    /// </summary>
     private void AddFinalSegment(TranscriptResult result)
     {
-        var speaker = result.Speaker ?? "Unknown";
+        var speaker = result.Speaker ?? "Desconocido";
         var lastSegment = _segments.LastOrDefault();
 
+        // Lógica simple de diarización: Si habla el mismo, unimos el texto
         if (lastSegment != null && lastSegment.SpeakerId == speaker)
         {
-            // Append text with proper spacing
-            lastSegment.Text = $"{lastSegment.Text} {result.Text}".Trim();
-
-            // Update end timestamp (wall-clock based)
-            lastSegment.EndTimeMs = GetCurrentTimestampMs();
+            lastSegment.Text = $"{lastSegment.Text}{result.Text}"; // Sin espacio extra, Soniox ya los trae
+            lastSegment.EndTimeMs = DateTime.UtcNow.TimeOfDay.TotalMilliseconds;
         }
         else
         {
-            var timestamp = GetCurrentTimestampMs();
-
-            var newSegment = new SpeakerSegment
+            // Nuevo hablante o primera frase
+            var timestamp = DateTime.UtcNow.TimeOfDay.TotalMilliseconds;
+            _segments.Add(new SpeakerSegment
             {
                 SpeakerId = speaker,
                 Text = result.Text,
-                IsAgent = IdentifyAgent(speaker),
+                IsAgent = speaker == "1", // Ejemplo simple: Speaker 1 es agente
                 StartTimeMs = timestamp,
                 EndTimeMs = timestamp
-            };
-
-            _segments.Add(newSegment);
+            });
         }
     }
 
-    /// <inheritdoc />
     public void Reset()
     {
         _segments.Clear();
@@ -93,23 +66,5 @@ public class TranscriptStateManager : ITranscriptState
         NotifyStateChanged();
     }
 
-    // --- 4. Helpers ---
-
     private void NotifyStateChanged() => OnStateChanged?.Invoke();
-
-    /// <summary>
-    /// Returns a wall-clock based timestamp in milliseconds.
-    /// Note: This is not audio-time accurate and may be replaced
-    /// by engine-provided timestamps in the future.
-    /// </summary>
-    private static double GetCurrentTimestampMs()
-        => DateTime.UtcNow.TimeOfDay.TotalMilliseconds;
-
-    /// <summary>
-    /// Identifies whether a given speaker ID corresponds to the agent.
-    /// This logic is intentionally simple and can be replaced
-    /// with configuration-based or metadata-driven logic.
-    /// </summary>
-    private bool IdentifyAgent(string speakerId)
-        => speakerId == "1" || speakerId == "A";
 }
