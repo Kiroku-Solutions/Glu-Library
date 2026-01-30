@@ -4,61 +4,71 @@ using Glu_Library.Services.Interfaces;
 namespace Glu_Library.Services;
 
 /// <summary>
-/// Gestiona el estado de la transcripción: segmentos finales y texto parcial en tiempo real.
+/// Default implementation of <see cref="ITranscriptState"/>.
+/// Manages the state of the transcription session, organizing finalized segments
+/// and handling real-time partial updates with basic diarization logic.
 /// </summary>
 public class TranscriptStateManager : ITranscriptState
 {
-    // --- Estado Interno ---
+    // --- Internal State ---
     private readonly List<SpeakerSegment> _segments = new();
 
     public IReadOnlyList<SpeakerSegment> Segments => _segments;
+    
     public TranscriptResult? CurrentPartial { get; private set; }
 
     public event Action? OnStateChanged;
 
+    /// <inheritdoc />
     public void ProcessResult(TranscriptResult result)
     {
-        // Si el resultado es final, lo guardamos en el historial
         if (result.IsFinal)
         {
             AddFinalSegment(result);
-            CurrentPartial = null; // Limpiamos el parcial porque ya se confirmó
+            // Clear partial state since the text has been confirmed/finalized
+            CurrentPartial = null; 
         }
         else
         {
-            // Si es parcial, solo actualizamos la vista temporal
+            // Update the transient/partial view
             CurrentPartial = result;
         }
 
         NotifyStateChanged();
     }
 
+    /// <summary>
+    /// Adds a finalized result to the history. 
+    /// Merges text if the speaker is the same as the last segment.
+    /// </summary>
     private void AddFinalSegment(TranscriptResult result)
     {
-        var speaker = result.Speaker ?? "Desconocido";
+        var speaker = result.Speaker ?? "Unknown";
         var lastSegment = _segments.LastOrDefault();
 
-        // Lógica simple de diarización: Si habla el mismo, unimos el texto
+        // Basic diarization logic: Merge if same speaker
         if (lastSegment != null && lastSegment.SpeakerId == speaker)
         {
-            lastSegment.Text = $"{lastSegment.Text}{result.Text}"; // Sin espacio extra, Soniox ya los trae
+            // Append text (Soniox tokens usually include spacing)
+            lastSegment.Text = $"{lastSegment.Text}{result.Text}"; 
             lastSegment.EndTimeMs = DateTime.UtcNow.TimeOfDay.TotalMilliseconds;
         }
         else
         {
-            // Nuevo hablante o primera frase
+            // New speaker or start of stream
             var timestamp = DateTime.UtcNow.TimeOfDay.TotalMilliseconds;
             _segments.Add(new SpeakerSegment
             {
                 SpeakerId = speaker,
                 Text = result.Text,
-                IsAgent = speaker == "1", // Ejemplo simple: Speaker 1 es agente
+                IsAgent = IdentifyAgent(speaker),
                 StartTimeMs = timestamp,
                 EndTimeMs = timestamp
             });
         }
     }
 
+    /// <inheritdoc />
     public void Reset()
     {
         _segments.Clear();
@@ -67,4 +77,11 @@ public class TranscriptStateManager : ITranscriptState
     }
 
     private void NotifyStateChanged() => OnStateChanged?.Invoke();
+
+    /// <summary>
+    /// Helper to identify if a speaker ID belongs to an agent/system.
+    /// Current logic is a placeholder.
+    /// </summary>
+    private bool IdentifyAgent(string speakerId)
+        => speakerId == "1" || speakerId == "A";
 }
