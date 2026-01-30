@@ -1,39 +1,56 @@
+using System.Text.Json.Serialization;
+
 namespace Glu_Library.Models.WebSocket;
 
 /// <summary>
-/// Initial payload sent to the Soniox WebSocket endpoint
-/// to start a transcription session.
+/// Configuración inicial para la sesión de WebSocket.
 /// </summary>
 public class SonioxStartRequest
 {
-    /// <summary>
-    /// Authentication token provided by Soniox.
-    /// Required to authorize the WebSocket session.
-    /// </summary>
-    public string? Token { get; set; }
+    [JsonPropertyName("api_key")]
+    public string? ApiKey { get; set; }
 
-    /// <summary>
-    /// Name of the speech recognition model to use.
-    /// Example: "en_v2", "es_v1", etc.
-    /// </summary>
+    [JsonPropertyName("model")]
     public string? Model { get; set; }
 
-    /// <summary>
-    /// Enables speaker diarization (speaker separation).
-    /// When enabled, the transcription will attempt
-    /// to identify different speakers.
-    /// </summary>
-    public bool EnableDiarization { get; set; } = true;
+    // --- Audio Configuration ---
+    
+    [JsonPropertyName("audio_format")]
+    public string AudioFormat { get; set; } = "pcm_s16le";
+
+    [JsonPropertyName("sample_rate")]
+    public int SampleRate { get; set; }
+
+    [JsonPropertyName("num_channels")]
+    public int NumChannels { get; set; } = 1;
+
+    // --- Features ---
+
+    [JsonPropertyName("language_hints")]
+    public List<string> LanguageHints { get; set; } = new();
+
+    [JsonPropertyName("enable_global_speaker_diarization")]
+    public bool EnableGlobalSpeakerDiarization { get; set; } = true;
+
+    [JsonPropertyName("enable_language_identification")]
+    public bool EnableLanguageIdentification { get; set; } = false;
+
+    [JsonPropertyName("enable_endpoint_detection")]
+    public bool EnableEndpointDetection { get; set; } = true;
+
+    // --- Advanced Features (Nuevos) ---
 
     /// <summary>
-    /// Enables partial (intermediate) transcription results.
-    /// Useful for real-time captions.
+    /// Contexto para mejorar la precisión (términos médicos, nombres, etc).
     /// </summary>
-    public bool EnablePartialResults { get; set; } = true;
+    [JsonPropertyName("context")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] // <-- CORREGIDO
+    public SonioxContext? Context { get; set; }
 
     /// <summary>
-    /// Language code for the transcription.
-    /// Examples: "en", "es", "en-US".
+    /// Configuración para traducción en tiempo real.
     /// </summary>
-    public string Language { get; set; } = "en";
+    [JsonPropertyName("translation")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] // <-- CORREGIDO
+    public SonioxTranslationConfig? Translation { get; set; }
 }

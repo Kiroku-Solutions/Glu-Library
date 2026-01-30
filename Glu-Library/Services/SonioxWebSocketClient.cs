@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization; // Necesario para las opciones de JSON
 using Glu_Library.Configuration;
 using Glu_Library.Models;
 using Glu_Library.Models.WebSocket;
@@ -9,97 +10,73 @@ using Microsoft.Extensions.Options;
 
 namespace Glu_Library.Services;
 
-/// <summary>
-/// WebSocket client responsible for:
-/// - Connecting to Soniox real-time transcription service
-/// - Streaming raw audio data
-/// - Receiving partial and final transcription results
-/// </summary>
 public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
 {
-    /// <summary>
-    /// Underlying WebSocket implementation provided by .NET.
-    /// Manages the low-level WebSocket connection.
-    /// </summary>
-    private readonly ClientWebSocket _webSocket = new();
+    private ClientWebSocket? _webSocket;
+    
+    // Configuración JSON robusta para evitar errores por mayúsculas/minúsculas
+    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
-    /// <summary>
-    /// JSON serializer configuration optimized for web payloads
-    /// (camelCase, relaxed formatting, etc.).
-    /// </summary>
-    private readonly JsonSerializerOptions _jsonOptions =
-        new(JsonSerializerDefaults.Web);
-
-    /// <summary>
-    /// Fully qualified WebSocket endpoint URI.
-    /// </summary>
     private readonly Uri _webSocketUri;
-
-    /// <summary>
-    /// Initial "start" message sent to Soniox to initialize
-    /// the transcription session.
-    /// </summary>
-    private readonly SonioxStartRequest _startRequest;
-
-    /// <summary>
-    /// Cancellation token source used to stop the receive loop
-    /// when the client disconnects or is disposed.
-    /// </summary>
+    private readonly SonioxStartRequest _startRequest; 
     private CancellationTokenSource? _receiveCts;
 
-    /// <summary>
-    /// Event raised whenever a transcription result
-    /// (partial or final) is received from Soniox.
-    /// </summary>
     public event Action<TranscriptResult>? OnTranscriptReceived;
-
-    /// <summary>
-    /// Event raised when a fatal WebSocket or processing error occurs.
-    /// </summary>
     public event Action<Exception>? OnError;
 
-    /// <summary>
-    /// Creates a new Soniox WebSocket client using dependency-injected options.
-    /// </summary>
-    /// <param name="options">
-    /// Configuration options bound from appsettings.json or provided programmatically.
-    /// </param>
+    // Propiedad que se llenará desde el UI con la frecuencia real (48000/44100)
+    public int SampleRate { get; set; } = 48000; 
+
     public SonioxWebSocketClient(IOptions<SonioxWebSocketOptions> options)
     {
         var opts = options.Value;
-
-        // Validate mandatory configuration
         if (string.IsNullOrWhiteSpace(opts.Endpoint))
-            throw new InvalidOperationException(
-                "Soniox WebSocket endpoint is not configured.");
+            throw new InvalidOperationException("Soniox Endpoint no configurado.");
 
         _webSocketUri = new Uri(opts.Endpoint);
 
-        // Build the initial start request sent immediately after connecting
+        // --- CONFIGURACIÓN V3 ---
         _startRequest = new SonioxStartRequest
         {
-            Token = opts.Token,
-            Model = opts.Model,
-            EnableDiarization = opts.EnableSpeakerDiarization,
-            EnablePartialResults = opts.EnablePartialResults,
-            Language = opts.Language
+            ApiKey = opts.Token,
+            
+            // Modelo V3 recomendado
+            Model = "stt-rt-v3", 
+            
+            // Pistas de idioma (Español)
+            LanguageHints = new List<string> { "es" },
+
+            // Configuración de Audio requerida para RAW PCM
+            AudioFormat = "pcm_s16le",
+            NumChannels = 1,
+            // SampleRate se asignará en ConnectAsync
+            
+            EnableGlobalSpeakerDiarization = opts.EnableSpeakerDiarization,
+            
+            // V3 maneja esto muy bien para detectar frases completas
+            EnableEndpointDetection = true 
         };
     }
 
-    /// <summary>
-    /// Opens the WebSocket connection and starts the transcription session.
-    /// </summary>
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            // Establish WebSocket connection
+            // Limpieza preventiva
+            if (_webSocket != null) _webSocket.Dispose();
+            _webSocket = new ClientWebSocket();
+
             await _webSocket.ConnectAsync(_webSocketUri, cancellationToken);
 
-            // Send the initial "start" message required by Soniox
+            // ACTUALIZAR SAMPLE RATE (Vital)
+            _startRequest.SampleRate = this.SampleRate;
+
             await SendJsonAsync(_startRequest, cancellationToken);
 
-            // Start background receive loop (fire-and-forget)
             _receiveCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _ = ReceiveLoopAsync(_receiveCts.Token);
         }
@@ -110,24 +87,13 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
         }
     }
 
-    /// <summary>
-    /// Sends raw PCM audio bytes to Soniox over the WebSocket connection.
-    /// </summary>
-    public async Task SendAudioAsync(
-        ReadOnlyMemory<byte> audioData,
-        CancellationToken cancellationToken = default)
+    public async Task SendAudioAsync(ReadOnlyMemory<byte> audioData, CancellationToken cancellationToken = default)
     {
-        // Do nothing if the socket is not open
-        if (_webSocket.State != WebSocketState.Open)
-            return;
+        if (_webSocket is null || _webSocket.State != WebSocketState.Open) return;
 
         try
         {
-            await _webSocket.SendAsync(
-                audioData,
-                WebSocketMessageType.Binary,
-                endOfMessage: true,
-                cancellationToken);
+            await _webSocket.SendAsync(audioData, WebSocketMessageType.Binary, true, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -135,23 +101,14 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
         }
     }
 
-    /// <summary>
-    /// Gracefully closes the WebSocket connection and stops the receive loop.
-    /// </summary>
     public async Task DisconnectAsync()
     {
         try
         {
-            // Stop receive loop
             _receiveCts?.Cancel();
-
-            // Close WebSocket if still open
-            if (_webSocket.State == WebSocketState.Open)
+            if (_webSocket != null && _webSocket.State == WebSocketState.Open)
             {
-                await _webSocket.CloseAsync(
-                    WebSocketCloseStatus.NormalClosure,
-                    "Client disconnect",
-                    CancellationToken.None);
+                await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Bye", CancellationToken.None);
             }
         }
         catch (Exception ex)
@@ -160,98 +117,116 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
         }
     }
 
-    /// <summary>
-    /// Background loop that continuously listens for incoming
-    /// WebSocket messages from Soniox.
-    /// </summary>
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
     {
         var buffer = new byte[8192];
 
         try
         {
-            while (!cancellationToken.IsCancellationRequested &&
-                   _webSocket.State == WebSocketState.Open)
+            Console.WriteLine("🟢 [SonioxClient] Conectado. Esperando audio...");
+
+            while (!cancellationToken.IsCancellationRequested && _webSocket?.State == WebSocketState.Open)
             {
                 var result = await _webSocket.ReceiveAsync(buffer, cancellationToken);
 
-                // Soniox sends transcription results as text frames (JSON)
-                if (result.MessageType != WebSocketMessageType.Text)
-                    continue;
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    Console.WriteLine($"🔴 [SonioxClient] Servidor cerró: {result.CloseStatusDescription}");
+                    return;
+                }
 
-                var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                ProcessIncomingMessage(json);
+                if (result.MessageType == WebSocketMessageType.Text)
+                {
+                    var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    // Console.WriteLine($"RAW: {json}"); // Descomentar para debug
+                    ProcessIncomingMessage(json);
+                }
             }
         }
-        catch (OperationCanceledException)
-        {
-            // Expected during normal shutdown
-        }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
+            Console.WriteLine($"🔥 [SonioxClient] Error loop: {ex.Message}");
             RaiseError(ex);
         }
     }
 
-    /// <summary>
-    /// Parses and processes a JSON message received from Soniox.
-    /// Converts it into a domain-level TranscriptResult.
-    /// </summary>
+    // --- LÓGICA V3 (Actualizada para leer 'tokens' en vez de 'fw') ---
     private void ProcessIncomingMessage(string json)
     {
         try
         {
-            var response =
-                JsonSerializer.Deserialize<SonioxStreamResponse>(json, _jsonOptions);
-
-            // Ignore empty or malformed messages
-            if (!string.IsNullOrWhiteSpace(response?.Text))
+            var response = JsonSerializer.Deserialize<SonioxStreamResponse>(json, _jsonOptions);
+            
+            // Validar errores
+            if (response?.ErrorCode != null)
             {
+                Console.WriteLine($"❌ Error Soniox ({response.ErrorCode}): {response.ErrorMessage}");
+                return;
+            }
+
+            if (response?.Tokens == null || response.Tokens.Count == 0) return;
+
+            // --- A) Tokens Finales (Confirmados) ---
+            // Soniox V3 envía los finales con is_final = true
+            var finalTokens = response.Tokens.Where(t => t.IsFinal).ToList();
+            if (finalTokens.Count > 0)
+            {
+                // Usamos Join vacio "" porque Soniox V3 incluye los espacios en el token (ej: " hello")
+                var text = string.Join("", finalTokens.Select(t => t.Text));
+                var speaker = finalTokens.First().Speaker ?? "0";
+
+                Console.WriteLine($"✅ FINAL: {text}");
+
                 OnTranscriptReceived?.Invoke(new TranscriptResult
                 {
-                    Text = response.Text!,
-                    IsFinal = response.IsFinal,
-                    Speaker = response.Speaker,
-                    Confidence = response.Confidence,
+                    Text = text,
+                    IsFinal = true,
+                    Speaker = speaker,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            // --- B) Tokens Parciales (Borrador) ---
+            // Soniox V3 envía hipótesis con is_final = false
+            var nonFinalTokens = response.Tokens.Where(t => !t.IsFinal).ToList();
+            if (nonFinalTokens.Count > 0)
+            {
+                var text = string.Join("", nonFinalTokens.Select(t => t.Text));
+                
+                // Console.WriteLine($"... Parcial: {text}");
+
+                OnTranscriptReceived?.Invoke(new TranscriptResult
+                {
+                    Text = text,
+                    IsFinal = false,
                     Timestamp = DateTime.UtcNow
                 });
             }
         }
         catch (Exception ex)
         {
-            RaiseError(ex);
+            Console.WriteLine($"Error parseando JSON: {ex.Message}");
         }
     }
 
-    /// <summary>
-    /// Sends a JSON payload as a text WebSocket frame.
-    /// Used mainly for the initial start request.
-    /// </summary>
     private async Task SendJsonAsync<T>(T payload, CancellationToken ct)
     {
+        if (_webSocket is null) return;
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
+        
+        Console.WriteLine($"📤 [SonioxClient] Config: {json}");
+        
         var bytes = Encoding.UTF8.GetBytes(json);
-
-        await _webSocket.SendAsync(
-            bytes,
-            WebSocketMessageType.Text,
-            endOfMessage: true,
-            ct);
+        await _webSocket.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
     }
 
-    /// <summary>
-    /// Safely raises the error event.
-    /// </summary>
-    private void RaiseError(Exception ex)
-        => OnError?.Invoke(ex);
+    private void RaiseError(Exception ex) => OnError?.Invoke(ex);
 
-    /// <summary>
-    /// Disposes the WebSocket client and releases all resources.
-    /// </summary>
     public async ValueTask DisposeAsync()
     {
         await DisconnectAsync();
-        _webSocket.Dispose();
+        _webSocket?.Dispose();
         _receiveCts?.Dispose();
     }
 }
