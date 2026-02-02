@@ -32,4 +32,10 @@ public class TranscriptResult
     /// Confidence score of the transcription result, typically between 0.0 and 1.0.
     /// </summary>
     public double Confidence { get; set; }
+    
+    /// <summary>
+    /// The detected language code (e.g., "es", "en") for this segment.
+    /// Essential for UI filtering or routing to specific translation models.
+    /// </summary>
+    public string? DetectedLanguage { get; set; }
 }
