@@ -26,7 +26,11 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
     };
 
     private readonly Uri _webSocketUri;
-    private readonly SonioxStartRequest _startRequest; 
+    private readonly SonioxWebSocketOptions _globalOptions; 
+    
+    // The current request configuration, built dynamically during ConnectAsync.
+    private SonioxStartRequest? _currentStartRequest; 
+    
     private CancellationTokenSource? _receiveCts;
 
     /// <inheritdoc />
@@ -44,37 +48,19 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
     /// <summary>
     /// Initializes a new instance of the <see cref="SonioxWebSocketClient"/> class.
     /// </summary>
-    /// <param name="options">Configuration options for Soniox service.</param>
+    /// <param name="options">Global configuration options for Soniox service.</param>
     public SonioxWebSocketClient(IOptions<SonioxWebSocketOptions> options)
     {
-        var opts = options.Value;
-        if (string.IsNullOrWhiteSpace(opts.Endpoint))
+        _globalOptions = options.Value;
+        
+        if (string.IsNullOrWhiteSpace(_globalOptions.Endpoint))
             throw new InvalidOperationException("Soniox Endpoint is not configured.");
 
-        _webSocketUri = new Uri(opts.Endpoint);
-
-        // --- V3 CONFIGURATION SETUP ---
-        _startRequest = new SonioxStartRequest
-        {
-            ApiKey = opts.Token,
-            Model = "stt-rt-v3", 
-            
-            // Soniox V3 works best with language hints. 
-            // We default to Spanish and English for robustness.
-            LanguageHints = new List<string> { "es", "en" }, 
-
-            // Audio Format Configuration (Required for raw PCM streams)
-            AudioFormat = "pcm_s16le",
-            NumChannels = 1,
-            // SampleRate is dynamic and will be assigned in ConnectAsync
-            
-            EnableGlobalSpeakerDiarization = opts.EnableSpeakerDiarization,
-            EnableEndpointDetection = true 
-        };
+        _webSocketUri = new Uri(_globalOptions.Endpoint);
     }
 
     /// <inheritdoc />
-    public async Task ConnectAsync(CancellationToken cancellationToken = default)
+    public async Task ConnectAsync(SonioxSessionConfig? sessionConfig = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -84,12 +70,48 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
 
             await _webSocket.ConnectAsync(_webSocketUri, cancellationToken);
 
-            // UPDATE SAMPLE RATE: Critical step. 
-            // We must send the exact sample rate detected by the browser/microphone.
-            _startRequest.SampleRate = this.SampleRate;
+            // --- BUILD DYNAMIC REQUEST ---
+            // 1. Initialize with base configuration from appsettings and defaults
+            _currentStartRequest = new SonioxStartRequest
+            {
+                ApiKey = _globalOptions.Token,
+                Model = "stt-rt-v3",
+                
+                // Audio Format Configuration (Required for raw PCM streams)
+                AudioFormat = "pcm_s16le",
+                NumChannels = 1,
+                
+                // Set the dynamic sample rate detected by the client
+                SampleRate = this.SampleRate,
+                
+                EnableGlobalSpeakerDiarization = _globalOptions.EnableSpeakerDiarization,
+                EnableEndpointDetection = true,
+                
+                // Default language hints (English + Spanish) for robustness
+                LanguageHints = new List<string> { "es", "en" } 
+            };
+
+            // 2. Apply runtime overrides from session configuration (if provided)
+            if (sessionConfig != null)
+            {
+                if (!string.IsNullOrEmpty(sessionConfig.ApiKey))
+                {
+                    _currentStartRequest.ApiKey = sessionConfig.ApiKey;
+                }
+
+                if (sessionConfig.LanguageHints != null && sessionConfig.LanguageHints.Any())
+                {
+                    _currentStartRequest.LanguageHints = sessionConfig.LanguageHints;
+                }
+
+                if (sessionConfig.Context != null)
+                {
+                    _currentStartRequest.Context = sessionConfig.Context;
+                }
+            }
 
             // Send initial handshake configuration
-            await SendJsonAsync(_startRequest, cancellationToken);
+            await SendJsonAsync(_currentStartRequest, cancellationToken);
 
             // Start the background receiving loop
             _receiveCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -135,7 +157,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
         var buffer = new byte[8192];
         try
         {
-            Console.WriteLine($"🟢 [SonioxClient] Connected to {_webSocketUri}. Listening...");
+            Console.WriteLine($"🟢 [SonioxClient] Connected. Listening...");
 
             while (!cancellationToken.IsCancellationRequested && _webSocket?.State == WebSocketState.Open)
             {
@@ -143,14 +165,13 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    Console.WriteLine($"🔴 [SonioxClient] Server closed connection: {result.CloseStatusDescription}");
+                    Console.WriteLine($"🔴 [SonioxClient] Server closed: {result.CloseStatusDescription}");
                     return;
                 }
 
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
                     var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    // Console.WriteLine($"RAW: {json}"); // Uncomment for debugging JSON structure
                     ProcessIncomingMessage(json);
                 }
             }
@@ -158,7 +179,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
         catch (OperationCanceledException) { /* Normal cancellation */ }
         catch (Exception ex)
         {
-            Console.WriteLine($"🔥 [SonioxClient] Receive loop error: {ex.Message}");
+            Console.WriteLine($"🔥 [SonioxClient] Receive error: {ex.Message}");
             RaiseError(ex);
         }
     }
@@ -192,15 +213,18 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
                 // Join without extra spaces, as Soniox tokens often include leading spaces.
                 var text = string.Join("", finalTokens.Select(t => t.Text));
                 var speaker = finalTokens.First().Speaker ?? "0";
+                
+                // Extract detected language from the first token (usually consistent per segment)
+                var lang = finalTokens.First().Language; 
 
-                // LOG MEJORADO: Ahora veremos el ID del hablante en consola
-                Console.WriteLine($"✅ FINAL [Spk {speaker}]: {text}");
+                Console.WriteLine($"✅ FINAL [Spk {speaker}] ({lang}): {text}");
 
                 OnTranscriptReceived?.Invoke(new TranscriptResult
                 {
                     Text = text,
                     IsFinal = true,
                     Speaker = speaker,
+                    DetectedLanguage = lang, // Pass detected language to UI
                     Timestamp = DateTime.UtcNow
                 });
             }
@@ -226,7 +250,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
     {
         if (_webSocket is null) return;
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
-        Console.WriteLine($"📤 [SonioxClient] Sending Config: {json}");
+        Console.WriteLine($"📤 [SonioxClient] Config: {json}");
         var bytes = Encoding.UTF8.GetBytes(json);
         await _webSocket.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
     }

@@ -23,8 +23,11 @@ public interface ISonioxWebSocketClient : IAsyncDisposable
     /// Establishes the WebSocket connection with the Soniox API and performs the initial handshake
     /// sending the configuration payload.
     /// </summary>
+    /// <param name="sessionConfig">Optional runtime configuration (e.g., API key override, language hints) to override global settings.</param>
     /// <param name="cancellationToken">A token used to cancel the connection attempt.</param>
-    Task ConnectAsync(CancellationToken cancellationToken = default);
+    Task ConnectAsync(
+        SonioxSessionConfig? sessionConfig = null, 
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Sends a chunk of raw PCM audio data to the Soniox WebSocket stream.

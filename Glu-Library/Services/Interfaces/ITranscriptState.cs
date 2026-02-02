@@ -10,7 +10,7 @@ public interface ITranscriptState
 {
     /// <summary>
     /// Gets the read-only collection of finalized speaker segments.
-    /// This list represents the confirmed history of the conversation.
+    /// This list represents the confirmed history of the conversation to be bound to the UI.
     /// </summary>
     IReadOnlyList<SpeakerSegment> Segments { get; }
 
