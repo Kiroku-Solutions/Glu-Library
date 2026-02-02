@@ -26,9 +26,11 @@ public static class GluServiceCollectionExtensions
         services.Configure<SonioxWebSocketOptions>(
             configuration.GetSection(SonioxWebSocketOptions.SectionName));
 
-        // Register core services
-        services.AddSingleton<ITranscriptState, TranscriptStateManager>();
-        services.AddSingleton<ISonioxWebSocketClient, SonioxWebSocketClient>();
+        // Register core services as Scoped.
+        // This ensures that each user connection (or HTTP request) gets its own isolated instance
+        // of the client and state manager, preventing data leaks between concurrent users.
+        services.AddScoped<ITranscriptState, TranscriptStateManager>();
+        services.AddScoped<ISonioxWebSocketClient, SonioxWebSocketClient>();
 
         return services;
     }
@@ -46,8 +48,9 @@ public static class GluServiceCollectionExtensions
     {
         services.Configure(configureOptions);
 
-        services.AddSingleton<ITranscriptState, TranscriptStateManager>();
-        services.AddSingleton<ISonioxWebSocketClient, SonioxWebSocketClient>();
+        // Register core services as Scoped to ensure isolation per user connection.
+        services.AddScoped<ITranscriptState, TranscriptStateManager>();
+        services.AddScoped<ISonioxWebSocketClient, SonioxWebSocketClient>();
 
         return services;
     }

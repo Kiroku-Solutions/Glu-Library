@@ -6,19 +6,27 @@ using Glu_Library.Configuration;
 using Glu_Library.Models;
 using Glu_Library.Models.WebSocket;
 using Glu_Library.Services.Interfaces;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Glu_Library.Services;
 
 /// <summary>
 /// Implementation of the Soniox WebSocket client.
-/// Handles connection management, audio streaming, and parsing of real-time V3 API responses.
+/// Features:
+/// 1. Real-time transcription streaming (V3 API).
+/// 2. Production-grade Logging.
+/// 3. Automatic Resilience (Auto-reconnect on network failure).
+/// 4. Dynamic Configuration support.
 /// </summary>
 public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
 {
     private ClientWebSocket? _webSocket;
+    private readonly ILogger<SonioxWebSocketClient> _logger;
     
-    // Robust JSON configuration to handle case-insensitivity and ignore nulls.
+    // Flag to distinguish between user-requested stop (clean) and network error (crash).
+    private volatile bool _isUserInitiatedDisconnect;
+
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -28,7 +36,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
     private readonly Uri _webSocketUri;
     private readonly SonioxWebSocketOptions _globalOptions; 
     
-    // The current request configuration, built dynamically during ConnectAsync.
+    // Store the request to re-send it during auto-reconnection.
     private SonioxStartRequest? _currentStartRequest; 
     
     private CancellationTokenSource? _receiveCts;
@@ -39,22 +47,20 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
     /// <inheritdoc />
     public event Action<Exception>? OnError;
 
-    /// <summary>
-    /// Gets or sets the sample rate of the audio stream.
-    /// This value is typically populated from the frontend (JS) interop layer (e.g., 48000 or 44100 Hz).
-    /// </summary>
     public int SampleRate { get; set; } = 48000; 
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="SonioxWebSocketClient"/> class.
-    /// </summary>
-    /// <param name="options">Global configuration options for Soniox service.</param>
-    public SonioxWebSocketClient(IOptions<SonioxWebSocketOptions> options)
+    public SonioxWebSocketClient(
+        IOptions<SonioxWebSocketOptions> options, 
+        ILogger<SonioxWebSocketClient> logger)
     {
         _globalOptions = options.Value;
+        _logger = logger;
         
         if (string.IsNullOrWhiteSpace(_globalOptions.Endpoint))
+        {
+            _logger.LogCritical("Soniox Endpoint is missing in configuration.");
             throw new InvalidOperationException("Soniox Endpoint is not configured.");
+        }
 
         _webSocketUri = new Uri(_globalOptions.Endpoint);
     }
@@ -62,111 +68,142 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
     /// <inheritdoc />
     public async Task ConnectAsync(SonioxSessionConfig? sessionConfig = null, CancellationToken cancellationToken = default)
     {
+        // Reset the disconnect flag because we are starting a new fresh session.
+        _isUserInitiatedDisconnect = false;
+
         try
         {
-            // Preventive cleanup before connecting
-            if (_webSocket != null) _webSocket.Dispose();
-            _webSocket = new ClientWebSocket();
+            // Build the configuration ONCE. We will reuse this object if we need to reconnect automatically.
+            BuildStartRequest(sessionConfig);
 
-            await _webSocket.ConnectAsync(_webSocketUri, cancellationToken);
+            await InitializeConnectionAsync(cancellationToken);
 
-            // --- BUILD DYNAMIC REQUEST ---
-            // 1. Initialize with base configuration from appsettings and defaults
-            _currentStartRequest = new SonioxStartRequest
-            {
-                ApiKey = _globalOptions.Token,
-                Model = "stt-rt-v3",
-                
-                // Audio Format Configuration (Required for raw PCM streams)
-                AudioFormat = "pcm_s16le",
-                NumChannels = 1,
-                
-                // Set the dynamic sample rate detected by the client
-                SampleRate = this.SampleRate,
-                
-                EnableGlobalSpeakerDiarization = _globalOptions.EnableSpeakerDiarization,
-                EnableEndpointDetection = true,
-                
-                // Default language hints (English + Spanish) for robustness
-                LanguageHints = new List<string> { "es", "en" } 
-            };
-
-            // 2. Apply runtime overrides from session configuration (if provided)
-            if (sessionConfig != null)
-            {
-                if (!string.IsNullOrEmpty(sessionConfig.ApiKey))
-                {
-                    _currentStartRequest.ApiKey = sessionConfig.ApiKey;
-                }
-
-                if (sessionConfig.LanguageHints != null && sessionConfig.LanguageHints.Any())
-                {
-                    _currentStartRequest.LanguageHints = sessionConfig.LanguageHints;
-                }
-
-                if (sessionConfig.Context != null)
-                {
-                    _currentStartRequest.Context = sessionConfig.Context;
-                }
-            }
-
-            // Send initial handshake configuration
-            await SendJsonAsync(_currentStartRequest, cancellationToken);
-
-            // Start the background receiving loop
+            // Start the background receiving loop (which includes the resilience logic).
             _receiveCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _ = ReceiveLoopAsync(_receiveCts.Token);
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Failed to establish initial connection to Soniox.");
             RaiseError(ex);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// internal helper to establish the socket connection and send the handshake.
+    /// Used by both ConnectAsync (initial) and ReceiveLoopAsync (reconnection).
+    /// </summary>
+    private async Task InitializeConnectionAsync(CancellationToken ct)
+    {
+        if (_webSocket != null) _webSocket.Dispose();
+        _webSocket = new ClientWebSocket();
+
+        _logger.LogInformation("Connecting to Soniox WebSocket at {Uri}...", _webSocketUri);
+        await _webSocket.ConnectAsync(_webSocketUri, ct);
+
+        if (_currentStartRequest != null)
+        {
+            await SendJsonAsync(_currentStartRequest, ct);
+        }
+    }
+
+    /// <summary>
+    /// Builds the SonioxStartRequest object merging global options and dynamic session config.
+    /// </summary>
+    private void BuildStartRequest(SonioxSessionConfig? sessionConfig)
+    {
+        _currentStartRequest = new SonioxStartRequest
+        {
+            ApiKey = _globalOptions.Token,
+            Model = "stt-rt-v3",
+            AudioFormat = "pcm_s16le",
+            NumChannels = 1,
+            SampleRate = this.SampleRate,
+            EnableGlobalSpeakerDiarization = _globalOptions.EnableSpeakerDiarization,
+            EnableEndpointDetection = true,
+            LanguageHints = new List<string> { "es", "en" }
+        };
+
+        // Apply overrides if provided
+        if (sessionConfig != null)
+        {
+            if (!string.IsNullOrEmpty(sessionConfig.ApiKey))
+                _currentStartRequest.ApiKey = sessionConfig.ApiKey;
+
+            if (sessionConfig.LanguageHints != null && sessionConfig.LanguageHints.Any())
+                _currentStartRequest.LanguageHints = sessionConfig.LanguageHints;
+
+            if (sessionConfig.Context != null)
+                _currentStartRequest.Context = sessionConfig.Context;
         }
     }
 
     /// <inheritdoc />
     public async Task SendAudioAsync(ReadOnlyMemory<byte> audioData, CancellationToken cancellationToken = default)
     {
+        // If we are reconnecting, _webSocket might be null or closed. 
+        // We simply skip sending audio frames to avoid crashing the app during the "blip".
         if (_webSocket is null || _webSocket.State != WebSocketState.Open) return;
+        
         try
         {
             await _webSocket.SendAsync(audioData, WebSocketMessageType.Binary, true, cancellationToken);
         }
-        catch (Exception ex) { RaiseError(ex); }
+        catch (Exception ex) 
+        { 
+            // We log warning but don't throw, to keep the stream resilient.
+            _logger.LogWarning("Failed to send audio frame: {Message}", ex.Message); 
+        }
     }
 
     /// <inheritdoc />
     public async Task DisconnectAsync()
     {
+        _isUserInitiatedDisconnect = true; // Signal that this is a clean stop.
+
         try
         {
             _receiveCts?.Cancel();
             if (_webSocket != null && _webSocket.State == WebSocketState.Open)
             {
+                _logger.LogInformation("Disconnecting client (User initiated)...");
                 await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnect", CancellationToken.None);
             }
         }
-        catch (Exception ex) { RaiseError(ex); }
+        catch (Exception ex) 
+        { 
+            _logger.LogError(ex, "Error during graceful disconnect.");
+        }
     }
 
     /// <summary>
-    /// Background loop that listens for incoming messages from the WebSocket.
+    /// Main loop that listens for messages and handles AUTO-RECONNECTION logic.
     /// </summary>
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
     {
         var buffer = new byte[8192];
-        try
-        {
-            Console.WriteLine($"🟢 [SonioxClient] Connected. Listening...");
 
-            while (!cancellationToken.IsCancellationRequested && _webSocket?.State == WebSocketState.Open)
+        _logger.LogInformation("🟢 Connected and listening for transcripts.");
+
+        while (!cancellationToken.IsCancellationRequested && !_isUserInitiatedDisconnect)
+        {
+            try
             {
+                // Verify socket state before reading
+                if (_webSocket == null || _webSocket.State != WebSocketState.Open)
+                {
+                    throw new WebSocketException("WebSocket is not open.");
+                }
+
                 var result = await _webSocket.ReceiveAsync(buffer, cancellationToken);
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    Console.WriteLine($"🔴 [SonioxClient] Server closed: {result.CloseStatusDescription}");
-                    return;
+                    _logger.LogWarning("🔴 Server closed connection: {Reason}", result.CloseStatusDescription);
+                    // If server closes, we might want to reconnect unless it's a fatal Auth error.
+                    // For simplicity in this V1, we treat it as a disconnect requiring reconnection.
+                    throw new WebSocketException("Server closed connection.");
                 }
 
                 if (result.MessageType == WebSocketMessageType.Text)
@@ -175,66 +212,79 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
                     ProcessIncomingMessage(json);
                 }
             }
-        }
-        catch (OperationCanceledException) { /* Normal cancellation */ }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"🔥 [SonioxClient] Receive error: {ex.Message}");
-            RaiseError(ex);
+            catch (OperationCanceledException)
+            {
+                // Normal shutdown via CancellationToken
+                break;
+            }
+            catch (Exception ex)
+            {
+                if (_isUserInitiatedDisconnect) break;
+
+                // --- AUTO-RECONNECT LOGIC ---
+                _logger.LogError("🔥 Connection lost: {Message}. Attempting to reconnect in 3 seconds...", ex.Message);
+                
+                // Notify UI of the hiccup (optional)
+                OnError?.Invoke(new Exception("Connection lost. Reconnecting..."));
+
+                try
+                {
+                    // Wait before retrying to avoid spamming the server
+                    await Task.Delay(3000, cancellationToken);
+
+                    // Attempt to re-initialize using the SAME configuration
+                    await InitializeConnectionAsync(cancellationToken);
+                    
+                    _logger.LogInformation("♻️ Reconnection successful! Resuming session.");
+                }
+                catch (Exception retryEx)
+                {
+                    // If retry fails, the loop will continue and try again in 3 seconds.
+                    _logger.LogError("Retry failed: {Message}", retryEx.Message);
+                }
+            }
         }
     }
 
-    /// <summary>
-    /// Parses the incoming JSON message using V3 logic (Tokens list).
-    /// Separates final confirmed text from partial hypotheses.
-    /// </summary>
     private void ProcessIncomingMessage(string json)
     {
         try
         {
             var response = JsonSerializer.Deserialize<SonioxStreamResponse>(json, _jsonOptions);
             
-            // 1. Handle API Errors
             if (response?.ErrorCode != null)
             {
-                Console.WriteLine($"❌ Soniox API Error ({response.ErrorCode}): {response.ErrorMessage}");
+                _logger.LogError("❌ Soniox API Error ({Code}): {Message}", response.ErrorCode, response.ErrorMessage);
+                // If we get an API error (e.g. Invalid Key), we probably shouldn't keep retrying infinitely, 
+                // but for now, we just log it.
                 return;
             }
 
             if (response?.Tokens == null || response.Tokens.Count == 0) return;
 
-            // 2. Process Tokens
-            // Soniox V3 sends a unified list. We filter by "is_final" flag.
-
-            // --- A) FINAL (Confirmed Text) ---
             var finalTokens = response.Tokens.Where(t => t.IsFinal).ToList();
             if (finalTokens.Count > 0)
             {
-                // Join without extra spaces, as Soniox tokens often include leading spaces.
                 var text = string.Join("", finalTokens.Select(t => t.Text));
                 var speaker = finalTokens.First().Speaker ?? "0";
-                
-                // Extract detected language from the first token (usually consistent per segment)
                 var lang = finalTokens.First().Language; 
 
-                Console.WriteLine($"✅ FINAL [Spk {speaker}] ({lang}): {text}");
+                _logger.LogInformation("✅ FINAL [Spk {Speaker}] ({Lang}): {Text}", speaker, lang, text);
 
                 OnTranscriptReceived?.Invoke(new TranscriptResult
                 {
                     Text = text,
                     IsFinal = true,
                     Speaker = speaker,
-                    DetectedLanguage = lang, // Pass detected language to UI
+                    DetectedLanguage = lang,
                     Timestamp = DateTime.UtcNow
                 });
             }
 
-            // --- B) PARTIAL (Real-time Hypothesis) ---
             var nonFinalTokens = response.Tokens.Where(t => !t.IsFinal).ToList();
             if (nonFinalTokens.Count > 0)
             {
                 var text = string.Join("", nonFinalTokens.Select(t => t.Text));
-                
                 OnTranscriptReceived?.Invoke(new TranscriptResult
                 {
                     Text = text,
@@ -243,14 +293,19 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
                 });
             }
         }
-        catch (Exception ex) { Console.WriteLine($"JSON Processing Error: {ex.Message}"); }
+        catch (Exception ex) 
+        { 
+            _logger.LogError(ex, "Error processing incoming JSON."); 
+        }
     }
 
     private async Task SendJsonAsync<T>(T payload, CancellationToken ct)
     {
         if (_webSocket is null) return;
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
-        Console.WriteLine($"📤 [SonioxClient] Config: {json}");
+        
+        _logger.LogDebug("📤 Sending Config: {Json}", json); 
+        
         var bytes = Encoding.UTF8.GetBytes(json);
         await _webSocket.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
     }
