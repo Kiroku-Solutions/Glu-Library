@@ -4,7 +4,7 @@ namespace Glu_Library.Models.WebSocket;
 
 /// <summary>
 /// Represents the initial configuration payload sent to establish a Soniox WebSocket session.
-/// Contains audio parameters, feature toggles, and advanced context settings.
+/// Configured for pure transcription (English/Spanish) with speaker diarization.
 /// </summary>
 public class SonioxStartRequest
 {
@@ -43,16 +43,17 @@ public class SonioxStartRequest
     // --- Features ---
 
     /// <summary>
-    /// List of ISO language codes (e.g., "en", "es") to bias the model towards specific languages.
-    /// Essential for accurate detection in V3 models.
+    /// List of ISO language codes to bias the model towards. 
+    /// Defaults to ["en", "es"] to support both English and Spanish mixed speech.
     /// </summary>
     [JsonPropertyName("language_hints")]
-    public List<string> LanguageHints { get; set; } = new();
+    public List<string> LanguageHints { get; set; } = new() { "en", "es" };
 
     /// <summary>
     /// Enables detection and labeling of different speakers in the audio stream.
     /// </summary>
-    [JsonPropertyName("enable_global_speaker_diarization")]
+    // ⚠️ FIX: Changed from "enable_global_speaker_diarization" to "enable_speaker_diarization"
+    [JsonPropertyName("enable_speaker_diarization")] 
     public bool EnableGlobalSpeakerDiarization { get; set; } = true;
 
     /// <summary>
@@ -69,11 +70,4 @@ public class SonioxStartRequest
     [JsonPropertyName("context")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SonioxContext? Context { get; set; }
-
-    /// <summary>
-    /// Configuration for real-time translation (e.g., "one_way" or "two_way").
-    /// </summary>
-    [JsonPropertyName("translation")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public SonioxTranslationConfig? Translation { get; set; }
 }
