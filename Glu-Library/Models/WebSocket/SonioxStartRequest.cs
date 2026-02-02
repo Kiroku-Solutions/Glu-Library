@@ -52,7 +52,8 @@ public class SonioxStartRequest
     /// <summary>
     /// Enables detection and labeling of different speakers in the audio stream.
     /// </summary>
-    [JsonPropertyName("enable_global_speaker_diarization")]
+    // ⚠️ FIX: Changed from "enable_global_speaker_diarization" to "enable_speaker_diarization"
+    [JsonPropertyName("enable_speaker_diarization")] 
     public bool EnableGlobalSpeakerDiarization { get; set; } = true;
 
     /// <summary>
@@ -69,6 +70,4 @@ public class SonioxStartRequest
     [JsonPropertyName("context")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SonioxContext? Context { get; set; }
-
-    // Translation property removed to prevent accidental usage and costs.
 }

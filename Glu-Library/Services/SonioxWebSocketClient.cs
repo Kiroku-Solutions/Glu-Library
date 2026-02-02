@@ -59,9 +59,9 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
             ApiKey = opts.Token,
             Model = "stt-rt-v3", 
             
-            // Configuration for bilingual support (English + Spanish) without translation cost.
-            // Using hints instead of restrictions allows for better code-switching handling.
-            LanguageHints = new List<string> { "en", "es" }, 
+            // Soniox V3 works best with language hints. 
+            // We default to Spanish and English for robustness.
+            LanguageHints = new List<string> { "es", "en" }, 
 
             // Audio Format Configuration (Required for raw PCM streams)
             AudioFormat = "pcm_s16le",
@@ -150,7 +150,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
                     var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    // Console.WriteLine($"RAW: {json}"); // Uncomment for debugging
+                    // Console.WriteLine($"RAW: {json}"); // Uncomment for debugging JSON structure
                     ProcessIncomingMessage(json);
                 }
             }
@@ -193,7 +193,8 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
                 var text = string.Join("", finalTokens.Select(t => t.Text));
                 var speaker = finalTokens.First().Speaker ?? "0";
 
-                Console.WriteLine($"✅ FINAL: {text}");
+                // LOG MEJORADO: Ahora veremos el ID del hablante en consola
+                Console.WriteLine($"✅ FINAL [Spk {speaker}]: {text}");
 
                 OnTranscriptReceived?.Invoke(new TranscriptResult
                 {
