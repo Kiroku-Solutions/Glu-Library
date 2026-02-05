@@ -39,6 +39,11 @@ public interface ISonioxWebSocketClient : IAsyncDisposable
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Signals the end of the audio stream to the server.
+    /// </summary>
+    Task StopStreamAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gracefully closes the WebSocket connection and releases resources.
     /// </summary>
     Task DisconnectAsync();
