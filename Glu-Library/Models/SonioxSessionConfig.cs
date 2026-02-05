@@ -20,6 +20,16 @@ public class SonioxSessionConfig
     public List<string>? LanguageHints { get; set; }
 
     /// <summary>
+    /// Configuration for real-time translation (one-way or two-way).
+    /// </summary>
+    public SonioxTranslationConfig? Translation { get; set; }
+
+    /// <summary>
+    /// Optional client reference ID for tracking.
+    /// </summary>
+    public string? ClientReferenceId { get; set; }
+
+    /// <summary>
     /// Optional context (medical terms, patient names) for this specific session.
     /// </summary>
     public SonioxContext? Context { get; set; }

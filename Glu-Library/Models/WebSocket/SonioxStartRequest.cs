@@ -52,9 +52,8 @@ public class SonioxStartRequest
     /// <summary>
     /// Enables detection and labeling of different speakers in the audio stream.
     /// </summary>
-    // ⚠️ FIX: Changed from "enable_global_speaker_diarization" to "enable_speaker_diarization"
     [JsonPropertyName("enable_speaker_diarization")] 
-    public bool EnableGlobalSpeakerDiarization { get; set; } = true;
+    public bool EnableSpeakerDiarization { get; set; } = true;
 
     /// <summary>
     /// Enables automatic detection of end-of-utterance to finalize text segments faster.
@@ -65,9 +64,21 @@ public class SonioxStartRequest
     // --- Advanced Features ---
 
     /// <summary>
+    /// Configuration for real-time translation (one-way or two-way).
+    /// </summary>
+    [JsonPropertyName("translation")]
+    public SonioxTranslationConfig? Translation { get; set; }
+
+    /// <summary>
     /// Optional context information to improve transcription accuracy for specific domains.
     /// </summary>
     [JsonPropertyName("context")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SonioxContext? Context { get; set; }
+
+    /// <summary>
+    /// Client-defined identifier to track this request in logs/webhooks.
+    /// </summary>
+    [JsonPropertyName("client_reference_id")]
+    public string? ClientReferenceId { get; set; }
 }

@@ -14,9 +14,9 @@ public class SonioxWebSocketOptions
         "wss://stt-rt.soniox.com/transcribe-websocket";
 
     /// <summary>
-    /// Soniox API authentication token.
+    /// Soniox API authentication token. Must be loaded from a secure source (e.g., Environment Variable, Key Vault).
     /// </summary>
-    public string Token { get; set; } = string.Empty;
+    public string Token { get; set; } = null!; // Enforce explicit configuration, not hardcoded default.
 
     /// <summary>
     /// Speech recognition model to use.
