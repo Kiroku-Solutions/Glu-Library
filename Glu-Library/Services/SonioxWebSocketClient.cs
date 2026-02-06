@@ -48,10 +48,16 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
     private DateTime _sessionStartTime;
 
     /// <inheritdoc />
+    public bool IsConnected => _webSocket != null && _webSocket.State == WebSocketState.Open;
+
+    /// <inheritdoc />
     public event Action<TranscriptResult>? OnTranscriptReceived;
     
     /// <inheritdoc />
     public event Action<Exception>? OnError;
+
+    /// <inheritdoc />
+    public event Action<bool>? OnConnectionStateChanged;
 
     public int SampleRate { get; set; } = 48000; 
 
@@ -110,10 +116,11 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
 
         // V-02 & V-07: Configure TLS and Pinning (Conceptual - ClientWebSocket usage varies by .NET version)
         // In a real scenario, use a factory or Options callback if available in the specific .NET version target.
-        _webSocket.Options.SetRequestHeader("User-Agent", "Glu-Library-Net8");
+        // _webSocket.Options.SetRequestHeader("User-Agent", "Glu-Library-Net8"); // Not supported in Blazor WASM
         _logger.LogInformation("Connecting to Soniox WebSocket at {Uri}...", _webSocketUri);
         await _webSocket.ConnectAsync(_webSocketUri, ct);
         _sessionStartTime = DateTime.UtcNow;
+        OnConnectionStateChanged?.Invoke(true);
 
         if (_currentStartRequest != null)
         {
@@ -127,14 +134,18 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
     private void BuildStartRequest(SonioxSessionConfig? sessionConfig)
     {
         // M1, M4, C1, C2 support via config
+        var token = !string.IsNullOrEmpty(sessionConfig?.ApiKey) 
+            ? sessionConfig.ApiKey 
+            : _globalOptions.Token;
+
         _currentStartRequest = new SonioxStartRequest
         {
-            ApiKey = _globalOptions.Token,
+            ApiKey = token,
             // V-03: Ensure this comes from secure source
             Model = _globalOptions.Model,
             AudioFormat = "pcm_s16le",
-            SampleRate = this.SampleRate,
-            EnableSpeakerDiarization = _globalOptions.EnableSpeakerDiarization,
+            SampleRate = sessionConfig?.SampleRate ?? this.SampleRate,
+            EnableSpeakerDiarization = sessionConfig?.EnableGlobalSpeakerDiarization ?? _globalOptions.EnableSpeakerDiarization,
             EnableEndpointDetection = true,
             // M1: Use dynamic hints, not hardcoded
             LanguageHints = sessionConfig?.LanguageHints ?? new List<string>(),
@@ -158,9 +169,13 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             return;
         }
         
-        try
+        try 
         {
-            await _webSocket.SendAsync(audioData, WebSocketMessageType.Binary, true, cancellationToken);
+            // Check if _webSocket is null before accessing it
+            if (_webSocket != null)
+            {
+                await _webSocket.SendAsync(audioData, WebSocketMessageType.Binary, true, cancellationToken);
+            }
         }
         catch (Exception ex) 
         { 
@@ -190,6 +205,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             }
             catch { /* Ignore close errors */ }
         }
+        OnConnectionStateChanged?.Invoke(false);
     }
 
     /// <summary>
@@ -234,7 +250,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
                 // Normal shutdown via CancellationToken
                 break;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 if (_isUserInitiatedDisconnect) break;
 
@@ -255,6 +271,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
 
     private void ProcessIncomingMessage(string json)
     {
+        _logger.LogInformation("Rx: {Json}", json); 
         try
         {
             var response = JsonSerializer.Deserialize<SonioxStreamResponse>(json, _jsonOptions);
