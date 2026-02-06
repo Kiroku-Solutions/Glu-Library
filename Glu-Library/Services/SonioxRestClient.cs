@@ -1,7 +1,9 @@
 using System.Net.Http.Json;
 using System.Security.Authentication;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Glu_Library.Configuration;
+using Glu_Library.Models.Rest;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -40,19 +42,28 @@ public class SonioxRestClient
         var response = await _httpClient.PostAsync("files", content, ct);
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
-        return result.GetProperty("file_id").GetString()!;
+        
+        // Fix: API returns "id", not "file_id"
+        if (result.TryGetProperty("id", out var idProp))
+        {
+            return idProp.GetString()!;
+        }
+        
+        // Fallback or throws
+        return result.GetProperty("id").GetString()!;
     }
 
     /// <summary>
-    /// Starts a transcription job for an uploaded file.
+    /// Starts a transcription job for an uploaded file or URL.
     /// </summary>
-    public async Task<string> TranscribeAsync(string fileId, string model = "en_v2", CancellationToken ct = default)
+    public async Task<string> TranscribeAsync(SonioxAsyncTranscriptionRequest request, CancellationToken ct = default)
     {
-        var request = new { file_id = fileId, model = model };
         var response = await _httpClient.PostAsJsonAsync("transcriptions", request, ct);
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
-        return result.GetProperty("transcription_id").GetString()!;
+        
+        // Fix: API returns "id", not "transcription_id"
+        return result.GetProperty("id").GetString()!;
     }
 
     /// <summary>
@@ -62,8 +73,36 @@ public class SonioxRestClient
     {
         var response = await _httpClient.GetAsync($"transcriptions/{transcriptionId}", ct);
         response.EnsureSuccessStatusCode();
-        // Return full JSON string for the caller to parse
         return await response.Content.ReadAsStringAsync(ct);
+    }
+    
+    /// <summary>
+    /// Retrieves the full transcript for a completed transcription.
+    /// </summary>
+    public async Task<string> GetTranscriptAsync(string transcriptionId, CancellationToken ct = default)
+    {
+        var response = await _httpClient.GetAsync($"transcriptions/{transcriptionId}/transcript", ct);
+        response.EnsureSuccessStatusCode();
+        // Returns the raw JSON of the transcript
+        return await response.Content.ReadAsStringAsync(ct);
+    }
+
+    /// <summary>
+    /// Deletes a file from Soniox storage.
+    /// </summary>
+    public async Task DeleteFileAsync(string fileId, CancellationToken ct = default)
+    {
+        var response = await _httpClient.DeleteAsync($"files/{fileId}", ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// Deletes a transcription job.
+    /// </summary>
+    public async Task DeleteTranscriptionAsync(string transcriptionId, CancellationToken ct = default)
+    {
+        var response = await _httpClient.DeleteAsync($"transcriptions/{transcriptionId}", ct);
+        response.EnsureSuccessStatusCode();
     }
     
     /// <summary>
@@ -71,10 +110,27 @@ public class SonioxRestClient
     /// </summary>
     public async Task<string> CreateTemporaryKeyAsync(string usageType, int expiresInSeconds, CancellationToken ct = default)
     {
-        var request = new { usage_type = usageType, expires_in = expiresInSeconds };
-        var response = await _httpClient.PostAsJsonAsync("api_keys", request, ct);
-        response.EnsureSuccessStatusCode();
+        // Manual JSON construction to ensure exact control over the payload.
+        // We know from testing that {"usage_type":"...","expires_in_seconds":...} works.
+        // Using StringContent avoids any globally configured naming policies in PostAsJsonAsync.
+        var json = JsonSerializer.Serialize(new
+        {
+            usage_type = usageType,
+            expires_in_seconds = expiresInSeconds
+        });
+
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        
+        var response = await _httpClient.PostAsync("auth/temporary-api-key", content, ct);
+        
+        if (!response.IsSuccessStatusCode)
+        {
+             var errorBody = await response.Content.ReadAsStringAsync(ct);
+             _logger.LogError("Soniox API Error ({StatusCode}): {Body}", response.StatusCode, errorBody);
+             response.EnsureSuccessStatusCode();
+        }
+        
         var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
-        return result.GetProperty("key").GetString()!;
+        return result.GetProperty("api_key").GetString()!;
     }
 }

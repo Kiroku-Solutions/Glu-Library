@@ -18,13 +18,13 @@ public class SonioxStreamResponse
     /// <summary>
     /// The duration of audio (in milliseconds) that has been fully processed into final tokens.
     /// </summary>
-    [JsonPropertyName("final_audio_proc_ms")]
+    [JsonPropertyName("audio_final_proc_ms")]
     public long FinalAudioProcMs { get; set; }
 
     /// <summary>
     /// The total duration of audio (in milliseconds) processed so far, including non-final segments.
     /// </summary>
-    [JsonPropertyName("total_audio_proc_ms")]
+    [JsonPropertyName("audio_total_proc_ms")]
     public long TotalAudioProcMs { get; set; }
 
     /// <summary>

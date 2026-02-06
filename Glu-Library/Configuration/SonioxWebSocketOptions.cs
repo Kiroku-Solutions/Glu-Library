@@ -21,7 +21,7 @@ public class SonioxWebSocketOptions
     /// <summary>
     /// Speech recognition model to use.
     /// </summary>
-    public string Model { get; set; } = "stt-rt-preview";
+    public string Model { get; set; } = "stt-rt-v3";
 
     /// <summary>
     /// Enables speaker diarization.
