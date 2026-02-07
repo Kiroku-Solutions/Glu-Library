@@ -38,9 +38,6 @@ public class SonioxSessionConfig
     /// <summary>
     /// Optional context (medical terms, patient names) for this specific session.
     /// </summary>
-    /// <summary>
-    /// Optional context (medical terms, patient names) for this specific session.
-    /// </summary>
     public SonioxContext? Context { get; set; }
 
     /// <summary>
