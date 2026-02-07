@@ -14,6 +14,11 @@ public class SonioxSessionConfig
     public string? ApiKey { get; set; }
 
     /// <summary>
+    /// Optional Model override (e.g., "es_v2", "en_v2"). If null, the global default is used.
+    /// </summary>
+    public string? Model { get; set; }
+
+    /// <summary>
     /// List of language codes to hint (e.g., "es", "en", "fr").
     /// Matches the "Language Selection" UI.
     /// </summary>
@@ -43,8 +48,8 @@ public class SonioxSessionConfig
     /// </summary>
     public SonioxContext? Context { get; set; }
 
-    /// <summary>
-    /// Enable global speaker diarization.
-    /// </summary>
-    public bool EnableGlobalSpeakerDiarization { get; set; }
+    // --- Feature Toggles (Overrides) ---
+    public bool? EnableSpeakerDiarization { get; set; }
+    public bool? EnableLanguageIdentification { get; set; }
+    public bool? EnableEndpointDetection { get; set; }
 }

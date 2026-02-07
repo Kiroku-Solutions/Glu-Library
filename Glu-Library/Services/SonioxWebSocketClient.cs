@@ -140,15 +140,20 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
 
         _currentStartRequest = new SonioxStartRequest
         {
-            ApiKey = token,
-            // V-03: Ensure this comes from secure source
-            Model = _globalOptions.Model,
+            ApiKey = _globalOptions.Token,
+            // V-03: Ensure this comes from secure source, allow session override
+            Model = !string.IsNullOrEmpty(sessionConfig?.Model) ? sessionConfig.Model : _globalOptions.Model,
             AudioFormat = "pcm_s16le",
-            SampleRate = sessionConfig?.SampleRate ?? this.SampleRate,
-            EnableSpeakerDiarization = sessionConfig?.EnableGlobalSpeakerDiarization ?? _globalOptions.EnableSpeakerDiarization,
-            EnableEndpointDetection = true,
+            SampleRate = this.SampleRate,
+            SampleRate = this.SampleRate,
+            
+            // Feature Flags: Prefer Session Override -> fallback to Default (true)
+            EnableSpeakerDiarization = sessionConfig?.EnableSpeakerDiarization ?? _globalOptions.EnableSpeakerDiarization,
+            EnableEndpointDetection = sessionConfig?.EnableEndpointDetection ?? true,
+            EnableLanguageIdentification = sessionConfig?.EnableLanguageIdentification ?? true,
+
             // M1: Use dynamic hints, not hardcoded
-            LanguageHints = sessionConfig?.LanguageHints ?? new List<string>(),
+            LanguageHints = (sessionConfig?.LanguageHints?.Count > 0) ? sessionConfig.LanguageHints : new List<string> { "es", "en" },
             // M4: Translation
             Translation = sessionConfig?.Translation,
             // Client Reference ID
