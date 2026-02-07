@@ -69,10 +69,29 @@ public class SonioxRestClient
     /// <summary>
     /// Creates a temporary API key for client-side usage.
     /// </summary>
-    public async Task<string> CreateTemporaryKeyAsync(string usageType, int expiresInSeconds, CancellationToken ct = default)
+    public async Task<string> CreateTemporaryKeyAsync(string usageType, int expiresInSeconds, string? apiKeyOverride = null, CancellationToken ct = default)
     {
         var request = new { usage_type = usageType, expires_in = expiresInSeconds };
-        var response = await _httpClient.PostAsJsonAsync("api_keys", request, ct);
+        
+        // V-03: Create a request message manually to support overriding Auth header
+        var requestMessage = new HttpRequestMessage(HttpMethod.Post, "api_keys")
+        {
+            Content = JsonContent.Create(request)
+        };
+
+        if (!string.IsNullOrEmpty(apiKeyOverride))
+        {
+            // Use the User's Key if provided
+            requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKeyOverride);
+        }
+        // Else: The HttpClient default header (Server Key) is used automatically? 
+        // NOTE: HttpClient.DefaultRequestHeaders applies to all requests sent via that client instance.
+        // But creating a new HttpRequestMessage doesn't automatically inherit them if we were to act directly.
+        // HOWEVER, we are sending via _httpClient.SendAsync. 
+        // Default headers ARE applied to SendAsync requests unless explicitly overridden in the request message headers.
+        
+        var response = await _httpClient.SendAsync(requestMessage, ct);
+        
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
         return result.GetProperty("key").GetString()!;

@@ -50,6 +50,12 @@ public class SonioxStartRequest
     public List<string> LanguageHints { get; set; } = new() { "en", "es" };
 
     /// <summary>
+    /// Enables automatic detection of the spoken language.
+    /// </summary>
+    [JsonPropertyName("enable_language_identification")]
+    public bool EnableLanguageIdentification { get; set; } = true;
+
+    /// <summary>
     /// Enables detection and labeling of different speakers in the audio stream.
     /// </summary>
     [JsonPropertyName("enable_speaker_diarization")] 
