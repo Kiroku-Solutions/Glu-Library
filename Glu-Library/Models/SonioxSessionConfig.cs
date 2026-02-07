@@ -47,4 +47,20 @@ public class SonioxSessionConfig
     /// Enable global speaker diarization.
     /// </summary>
     public bool EnableGlobalSpeakerDiarization { get; set; }
+
+    /// <summary>
+    /// The model to use for transcription.
+    /// See <see cref="SonioxModels"/> for available options (e.g., <see cref="SonioxModels.RealTimeV4"/>).
+    /// </summary>
+    public string? Model { get; set; }
+
+    /// <summary>
+    /// Enable automatic endpoint detection to finish phrases.
+    /// </summary>
+    public bool EnableEndpointDetection { get; set; }
+
+    /// <summary>
+    /// Enable language identification to detect the language of each phrase.
+    /// </summary>
+    public bool EnableLanguageIdentification { get; set; }
 }

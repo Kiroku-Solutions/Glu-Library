@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Glu_Library.Models;
 using Glu_Library.Models.WebSocket; // Reuse Shared Models
 
 namespace Glu_Library.Models.Rest;
@@ -9,10 +10,11 @@ namespace Glu_Library.Models.Rest;
 public class SonioxAsyncTranscriptionRequest
 {
     /// <summary>
-    /// The model to use (e.g., "stt-async-v3").
+    /// The model to use. Default is <see cref="SonioxModels.AsyncV3"/>.
+    /// See <see cref="SonioxModels"/> for available options (e.g., <see cref="SonioxModels.AsyncV4"/>).
     /// </summary>
     [JsonPropertyName("model")]
-    public string Model { get; set; } = "stt-async-v3";
+    public string Model { get; set; } = SonioxModels.AsyncV3;
 
     /// <summary>
     /// The File ID of the uploaded audio file.

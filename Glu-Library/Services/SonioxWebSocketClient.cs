@@ -141,8 +141,9 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
         _currentStartRequest = new SonioxStartRequest
         {
             ApiKey = token,
-            // V-03: Ensure this comes from secure source
-            Model = _globalOptions.Model,
+            Model = !string.IsNullOrWhiteSpace(sessionConfig?.Model) 
+                ? sessionConfig.Model 
+                : _globalOptions.Model,
             AudioFormat = "pcm_s16le",
             SampleRate = sessionConfig?.SampleRate ?? this.SampleRate,
             EnableSpeakerDiarization = sessionConfig?.EnableGlobalSpeakerDiarization ?? _globalOptions.EnableSpeakerDiarization,

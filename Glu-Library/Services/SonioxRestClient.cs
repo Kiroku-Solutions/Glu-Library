@@ -108,11 +108,9 @@ public class SonioxRestClient
     /// <summary>
     /// Creates a temporary API key for client-side usage.
     /// </summary>
-    public async Task<string> CreateTemporaryKeyAsync(string usageType, int expiresInSeconds, CancellationToken ct = default)
+    public async Task<string> CreateTemporaryKeyAsync(string usageType, int expiresInSeconds, string? apiKeyOverride = null, CancellationToken ct = default)
     {
-        // Manual JSON construction to ensure exact control over the payload.
-        // We know from testing that {"usage_type":"...","expires_in_seconds":...} works.
-        // Using StringContent avoids any globally configured naming policies in PostAsJsonAsync.
+        // Manual JSON construction
         var json = JsonSerializer.Serialize(new
         {
             usage_type = usageType,
@@ -121,7 +119,21 @@ public class SonioxRestClient
 
         using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
         
-        var response = await _httpClient.PostAsync("auth/temporary-api-key", content, ct);
+        HttpResponseMessage response;
+
+        if (!string.IsNullOrEmpty(apiKeyOverride))
+        {
+            // Use a temporary client for the custom key override
+            using var tempClient = new HttpClient();
+            tempClient.BaseAddress = _httpClient.BaseAddress;
+            tempClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKeyOverride);
+            response = await tempClient.PostAsync("auth/temporary-api-key", content, ct);
+        }
+        else
+        {
+            // Use the default configured client
+            response = await _httpClient.PostAsync("auth/temporary-api-key", content, ct);
+        }
         
         if (!response.IsSuccessStatusCode)
         {
