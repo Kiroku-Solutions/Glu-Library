@@ -14,6 +14,11 @@ public class SonioxSessionConfig
     public string? ApiKey { get; set; }
 
     /// <summary>
+    /// Audio Sample Rate (e.g., 16000, 44100).
+    /// </summary>
+    public int? SampleRate { get; set; }
+
+    /// <summary>
     /// Optional Model override (e.g., "es_v2", "en_v2"). If null, the global default is used.
     /// </summary>
     public string? Model { get; set; }
