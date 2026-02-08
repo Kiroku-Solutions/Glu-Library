@@ -30,6 +30,12 @@ public class SonioxSessionConfig
     public List<string>? LanguageHints { get; set; }
 
     /// <summary>
+    /// The sample rate of the audio (e.g., 16000, 44100, 48000).
+    /// Required if overriding the default.
+    /// </summary>
+    public int? SampleRate { get; set; }
+
+    /// <summary>
     /// Configuration for real-time translation (one-way or two-way).
     /// </summary>
     public SonioxTranslationConfig? Translation { get; set; }
@@ -44,8 +50,24 @@ public class SonioxSessionConfig
     /// </summary>
     public SonioxContext? Context { get; set; }
 
-    // --- Feature Toggles (Overrides) ---
-    public bool? EnableSpeakerDiarization { get; set; }
-    public bool? EnableLanguageIdentification { get; set; }
-    public bool? EnableEndpointDetection { get; set; }
+    /// <summary>
+    /// Enable global speaker diarization.
+    /// </summary>
+    public bool EnableGlobalSpeakerDiarization { get; set; }
+
+    /// <summary>
+    /// The model to use for transcription.
+    /// See <see cref="SonioxModels"/> for available options (e.g., <see cref="SonioxModels.RealTimeV4"/>).
+    /// </summary>
+    public string? Model { get; set; }
+
+    /// <summary>
+    /// Enable automatic endpoint detection to finish phrases.
+    /// </summary>
+    public bool EnableEndpointDetection { get; set; }
+
+    /// <summary>
+    /// Enable language identification to detect the language of each phrase.
+    /// </summary>
+    public bool EnableLanguageIdentification { get; set; }
 }

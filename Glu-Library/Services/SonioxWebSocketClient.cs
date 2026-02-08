@@ -48,10 +48,16 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
     private DateTime _sessionStartTime;
 
     /// <inheritdoc />
+    public bool IsConnected => _webSocket != null && _webSocket.State == WebSocketState.Open;
+
+    /// <inheritdoc />
     public event Action<TranscriptResult>? OnTranscriptReceived;
     
     /// <inheritdoc />
     public event Action<Exception>? OnError;
+
+    /// <inheritdoc />
+    public event Action<bool>? OnConnectionStateChanged;
 
     public int SampleRate { get; set; } = 48000; 
 
@@ -109,11 +115,10 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
         _webSocket = new ClientWebSocket();
 
         // V-02 & V-07: Configure TLS and Pinning (Conceptual - ClientWebSocket usage varies by .NET version)
-        // In a real scenario, use a factory or Options callback if available in the specific .NET version target.
-        _webSocket.Options.SetRequestHeader("User-Agent", "Glu-Library-Net8");
         _logger.LogInformation("Connecting to Soniox WebSocket at {Uri}...", _webSocketUri);
         await _webSocket.ConnectAsync(_webSocketUri, ct);
         _sessionStartTime = DateTime.UtcNow;
+        OnConnectionStateChanged?.Invoke(true);
 
         if (_currentStartRequest != null)
         {
@@ -127,22 +132,22 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
     private void BuildStartRequest(SonioxSessionConfig? sessionConfig)
     {
         // M1, M4, C1, C2 support via config
+        var token = !string.IsNullOrEmpty(sessionConfig?.ApiKey) 
+            ? sessionConfig.ApiKey 
+            : _globalOptions.Token;
+
         _currentStartRequest = new SonioxStartRequest
         {
-            ApiKey = _globalOptions.Token,
-            // V-03: Ensure this comes from secure source, allow session override
-            Model = !string.IsNullOrEmpty(sessionConfig?.Model) ? sessionConfig.Model : _globalOptions.Model,
+            ApiKey = token,
+            Model = !string.IsNullOrWhiteSpace(sessionConfig?.Model) 
+                ? sessionConfig.Model 
+                : _globalOptions.Model,
             AudioFormat = "pcm_s16le",
-            SampleRate = this.SampleRate,
-            SampleRate = this.SampleRate,
-            
-            // Feature Flags: Prefer Session Override -> fallback to Default (true)
-            EnableSpeakerDiarization = sessionConfig?.EnableSpeakerDiarization ?? _globalOptions.EnableSpeakerDiarization,
-            EnableEndpointDetection = sessionConfig?.EnableEndpointDetection ?? true,
-            EnableLanguageIdentification = sessionConfig?.EnableLanguageIdentification ?? true,
-
+            SampleRate = sessionConfig?.SampleRate ?? this.SampleRate,
+            EnableSpeakerDiarization = sessionConfig?.EnableGlobalSpeakerDiarization ?? _globalOptions.EnableSpeakerDiarization,
+            EnableEndpointDetection = true,
             // M1: Use dynamic hints, not hardcoded
-            LanguageHints = (sessionConfig?.LanguageHints?.Count > 0) ? sessionConfig.LanguageHints : new List<string> { "es", "en" },
+            LanguageHints = sessionConfig?.LanguageHints ?? new List<string>(),
             // M4: Translation
             Translation = sessionConfig?.Translation,
             // Client Reference ID
@@ -163,13 +168,15 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             return;
         }
         
-        try
+        try 
         {
-            await _webSocket.SendAsync(audioData, WebSocketMessageType.Binary, true, cancellationToken);
+            if (_webSocket != null)
+            {
+                await _webSocket.SendAsync(audioData, WebSocketMessageType.Binary, true, cancellationToken);
+            }
         }
         catch (Exception ex) 
         { 
-            // We log warning but don't throw, to keep the stream resilient.
             _logger.LogWarning("Failed to send audio frame: {Message}", ex.Message); 
         }
     }
@@ -178,8 +185,6 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
     public async Task StopStreamAsync(CancellationToken cancellationToken = default)
     {
         if (_webSocket is null || _webSocket.State != WebSocketState.Open) return;
-        // Sending an empty binary message usually signals EOF in streams, or simply Close.
-        // Here we stick to Close as explicit "End of Stream" for Soniox unless API specifies zero-byte frame.
         await DisconnectAsync();
     }
 
@@ -195,11 +200,9 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             }
             catch { /* Ignore close errors */ }
         }
+        OnConnectionStateChanged?.Invoke(false);
     }
 
-    /// <summary>
-    /// Main loop that listens for messages and handles AUTO-RECONNECTION logic.
-    /// </summary>
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
     {
         var buffer = new byte[8192];
@@ -211,7 +214,6 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
         {
             try
             {
-                // Verify socket state before reading
                 if (_webSocket == null || _webSocket.State != WebSocketState.Open)
                 {
                     throw new WebSocketException("WebSocket is not open.");
@@ -223,8 +225,6 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     _logger.LogWarning("🔴 Server closed connection: {Reason}", result.CloseStatusDescription);
-                    // If server closes, we might want to reconnect unless it's a fatal Auth error.
-                    // For simplicity in this V1, we treat it as a disconnect requiring reconnection.
                     throw new WebSocketException("Server closed connection.");
                 }
 
@@ -236,10 +236,9 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             }
             catch (OperationCanceledException)
             {
-                // Normal shutdown via CancellationToken
                 break;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 if (_isUserInitiatedDisconnect) break;
 
@@ -252,7 +251,6 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             }
             finally
             {
-                // V-07: Memory Scrubbing
                 Array.Clear(buffer, 0, buffer.Length);
             }
         }
@@ -260,6 +258,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
 
     private void ProcessIncomingMessage(string json)
     {
+        _logger.LogInformation("Rx: {Json}", json); 
         try
         {
             var response = JsonSerializer.Deserialize<SonioxStreamResponse>(json, _jsonOptions);
@@ -267,8 +266,6 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             if (response?.ErrorCode != null)
             {
                 _logger.LogError("❌ Soniox API Error ({Code}): {Message}", response.ErrorCode, response.ErrorMessage);
-                // If we get an API error (e.g. Invalid Key), we probably shouldn't keep retrying infinitely, 
-                // but for now, we just log it.
                 return;
             }
 
@@ -280,7 +277,6 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
                 var text = string.Join("", finalTokens.Select(t => t.Text));
                 var speaker = finalTokens.First().Speaker ?? "0";
                 var lang = finalTokens.First().Language;
-                // S3: Confidence
                 var confidence = finalTokens.Average(t => t.Confidence);
 
                 _logger.LogInformation("✅ FINAL [Spk {Speaker}] ({Lang}) - Length: {Length}", speaker, lang, text.Length);
@@ -319,7 +315,6 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
         if (_webSocket is null) return;
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
         
-        // V-01: Secure Logging
         if (payload is SonioxStartRequest req)
             _logger.LogDebug("📤 Sending Config. Model: {Model}", req.Model);
         else

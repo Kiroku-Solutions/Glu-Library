@@ -1,3 +1,5 @@
+using Glu_Library.Models;
+
 namespace Glu_Library.Configuration;
 
 /// <summary>
@@ -20,8 +22,9 @@ public class SonioxWebSocketOptions
 
     /// <summary>
     /// Speech recognition model to use.
+    /// Default is <see cref="SonioxModels.RealTimeV3"/>.
     /// </summary>
-    public string Model { get; set; } = "stt-rt-preview";
+    public string Model { get; set; } = SonioxModels.RealTimeV3;
 
     /// <summary>
     /// Enables speaker diarization.
