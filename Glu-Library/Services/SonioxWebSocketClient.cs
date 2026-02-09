@@ -145,6 +145,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             AudioFormat = "pcm_s16le",
             SampleRate = sessionConfig?.SampleRate ?? this.SampleRate,
             EnableSpeakerDiarization = sessionConfig?.EnableGlobalSpeakerDiarization ?? _globalOptions.EnableSpeakerDiarization,
+            NumSpeakers = sessionConfig?.NumSpeakers,
             EnableEndpointDetection = true,
             // M1: Use dynamic hints, not hardcoded
             LanguageHints = sessionConfig?.LanguageHints ?? new List<string>(),
@@ -275,7 +276,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             if (finalTokens.Count > 0)
             {
                 var text = string.Join("", finalTokens.Select(t => t.Text));
-                var speaker = finalTokens.First().Speaker ?? "0";
+                var speaker = finalTokens.First().Speaker ?? "1";
                 var lang = finalTokens.First().Language;
                 var confidence = finalTokens.Average(t => t.Confidence);
 
@@ -296,10 +297,12 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             if (nonFinalTokens.Count > 0)
             {
                 var text = string.Join("", nonFinalTokens.Select(t => t.Text));
+                var speaker = nonFinalTokens.FirstOrDefault(t => t.Speaker != null)?.Speaker;
                 OnTranscriptReceived?.Invoke(new TranscriptResult
                 {
                     Text = text,
                     IsFinal = false,
+                    Speaker = speaker,
                     Timestamp = DateTime.UtcNow
                 });
             }

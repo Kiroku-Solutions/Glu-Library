@@ -62,6 +62,12 @@ public class SonioxStartRequest
     public bool EnableSpeakerDiarization { get; set; } = true;
 
     /// <summary>
+    /// Optional: Specify the number of speakers if known (2-5).
+    /// </summary>
+    [JsonPropertyName("num_speakers")]
+    public int? NumSpeakers { get; set; }
+
+    /// <summary>
     /// Enables automatic detection of end-of-utterance to finalize text segments faster.
     /// </summary>
     [JsonPropertyName("enable_endpoint_detection")]

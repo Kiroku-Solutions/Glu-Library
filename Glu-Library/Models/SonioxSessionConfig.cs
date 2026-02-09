@@ -51,6 +51,12 @@ public class SonioxSessionConfig
     /// </summary>
     public bool EnableGlobalSpeakerDiarization { get; set; }
 
+    /// <summary>
+    /// Optional: Force a specific number of speakers (2-5). 
+    /// If null, the model attempts to detect automatically (if diarization is enabled).
+    /// </summary>
+    public int? NumSpeakers { get; set; }
+
 
 
     /// <summary>
