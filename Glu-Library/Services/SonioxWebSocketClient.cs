@@ -209,7 +209,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
         var buffer = new byte[8192];
         int reconnectAttempts = 0;
 
-        _logger.LogInformation("🟢 Connected and listening for transcripts.");
+        _logger.LogInformation("Connected and listening for transcripts.");
 
         while (!cancellationToken.IsCancellationRequested && !_isUserInitiatedDisconnect)
         {
@@ -225,7 +225,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    _logger.LogWarning("🔴 Server closed connection: {Reason}", result.CloseStatusDescription);
+                    _logger.LogWarning("Server closed connection: {Reason}", result.CloseStatusDescription);
                     throw new WebSocketException("Server closed connection.");
                 }
 
@@ -259,14 +259,14 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
 
     private void ProcessIncomingMessage(string json)
     {
-        _logger.LogInformation("Rx: {Json}", json); 
+        _logger.LogDebug("Rx: {Length} bytes received", json.Length); 
         try
         {
             var response = JsonSerializer.Deserialize<SonioxStreamResponse>(json, _jsonOptions);
             
             if (response?.ErrorCode != null)
             {
-                _logger.LogError("❌ Soniox API Error ({Code}): {Message}", response.ErrorCode, response.ErrorMessage);
+                _logger.LogError("Soniox API Error ({Code}): {Message}", response.ErrorCode, response.ErrorMessage);
                 return;
             }
 
@@ -280,7 +280,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
                 var lang = finalTokens.First().Language;
                 var confidence = finalTokens.Average(t => t.Confidence);
 
-                _logger.LogInformation("✅ FINAL [Spk {Speaker}] ({Lang}) - Length: {Length}", speaker, lang, text.Length);
+                _logger.LogDebug("Final transcript [Speaker {Speaker}] ({Lang}) - Length: {Length}", speaker, lang, text.Length);
 
                 OnTranscriptReceived?.Invoke(new TranscriptResult
                 {
@@ -319,9 +319,9 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
         
         if (payload is SonioxStartRequest req)
-            _logger.LogDebug("📤 Sending Config. Model: {Model}", req.Model);
+            _logger.LogDebug("Sending config. Model: {Model}", req.Model);
         else
-            _logger.LogDebug("📤 Sending Control Message."); 
+            _logger.LogDebug("Sending control message."); 
         
         var bytes = Encoding.UTF8.GetBytes(json);
         await _webSocket.SendAsync(bytes, WebSocketMessageType.Text, true, ct);

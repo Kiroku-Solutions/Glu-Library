@@ -137,8 +137,8 @@ public class SonioxRestClient
         
         if (!response.IsSuccessStatusCode)
         {
-             var errorBody = await response.Content.ReadAsStringAsync(ct);
-             _logger.LogError("Soniox API Error ({StatusCode}): {Body}", response.StatusCode, errorBody);
+             // Audit Fix #4.3: Redact response body to prevent sensitive data in logs
+             _logger.LogError("Soniox API Error ({StatusCode}). Check Soniox dashboard for details.", response.StatusCode);
              response.EnsureSuccessStatusCode();
         }
         

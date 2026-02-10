@@ -5,6 +5,7 @@
         <RootNamespace>Glu_Library</RootNamespace>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
         
         <!-- NuGet Metadata -->
         <PackageId>Glu.Library</PackageId>
