@@ -146,7 +146,8 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             SampleRate = sessionConfig?.SampleRate ?? this.SampleRate,
             EnableSpeakerDiarization = sessionConfig?.EnableGlobalSpeakerDiarization ?? _globalOptions.EnableSpeakerDiarization,
             NumSpeakers = sessionConfig?.NumSpeakers,
-            EnableEndpointDetection = true,
+            EnableEndpointDetection = sessionConfig?.EnableEndpointDetection ?? true,
+            EnableLanguageIdentification = sessionConfig?.EnableLanguageIdentification ?? true,
             // M1: Use dynamic hints, not hardcoded
             LanguageHints = sessionConfig?.LanguageHints ?? new List<string>(),
             // M4: Translation
@@ -275,22 +276,30 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             var finalTokens = response.Tokens.Where(t => t.IsFinal).ToList();
             if (finalTokens.Count > 0)
             {
-                var text = string.Join("", finalTokens.Select(t => t.Text));
-                var speaker = finalTokens.First().Speaker ?? "1";
-                var lang = finalTokens.First().Language;
-                var confidence = finalTokens.Average(t => t.Confidence);
-
-                _logger.LogDebug("Final transcript [Speaker {Speaker}] ({Lang}) - Length: {Length}", speaker, lang, text.Length);
-
-                OnTranscriptReceived?.Invoke(new TranscriptResult
+                // Group tokens by TranslationStatus to emit separate events for original vs translated
+                var groups = finalTokens.GroupBy(t => t.TranslationStatus ?? "none").ToList();
+                
+                foreach (var group in groups)
                 {
-                    Text = text,
-                    IsFinal = true,
-                    Speaker = speaker,
-                    DetectedLanguage = lang,
-                    Timestamp = DateTime.UtcNow,
-                    Confidence = confidence
-                });
+                    var text = string.Join("", group.Select(t => t.Text));
+                    var speaker = group.First().Speaker ?? "1";
+                    var lang = group.First().Language;
+                    var confidence = group.Average(t => t.Confidence);
+                    var translationStatus = group.Key == "none" ? null : group.Key;
+
+                    _logger.LogDebug("Final transcript [Speaker {Speaker}] ({Lang}) [Status: {Status}] - Length: {Length}", speaker, lang, translationStatus ?? "none", text.Length);
+
+                    OnTranscriptReceived?.Invoke(new TranscriptResult
+                    {
+                        Text = text,
+                        IsFinal = true,
+                        Speaker = speaker,
+                        DetectedLanguage = lang,
+                        Timestamp = DateTime.UtcNow,
+                        Confidence = confidence,
+                        TranslationStatus = translationStatus
+                    });
+                }
             }
 
             var nonFinalTokens = response.Tokens.Where(t => !t.IsFinal).ToList();
@@ -298,11 +307,15 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             {
                 var text = string.Join("", nonFinalTokens.Select(t => t.Text));
                 var speaker = nonFinalTokens.FirstOrDefault(t => t.Speaker != null)?.Speaker;
+                var lang = nonFinalTokens.FirstOrDefault(t => t.Language != null)?.Language;
+                var status = nonFinalTokens.FirstOrDefault(t => t.TranslationStatus != null)?.TranslationStatus;
                 OnTranscriptReceived?.Invoke(new TranscriptResult
                 {
                     Text = text,
                     IsFinal = false,
                     Speaker = speaker,
+                    DetectedLanguage = lang,
+                    TranslationStatus = status,
                     Timestamp = DateTime.UtcNow
                 });
             }

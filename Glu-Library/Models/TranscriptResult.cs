@@ -37,4 +37,10 @@ public class TranscriptResult
     /// Essential for UI filtering or routing to specific translation models.
     /// </summary>
     public string? DetectedLanguage { get; set; }
+
+    /// <summary>
+    /// The translation status of this result: "original", "translation", or null.
+    /// Used by the UI to route text to the correct column in translation split view.
+    /// </summary>
+    public string? TranslationStatus { get; set; }
 }
