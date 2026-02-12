@@ -265,6 +265,14 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
         {
             var response = JsonSerializer.Deserialize<SonioxStreamResponse>(json, _jsonOptions);
             
+            // Debug: Log translation status presence
+            if (response?.Tokens != null && response.Tokens.Any(t => !string.IsNullOrEmpty(t.TranslationStatus)))
+            {
+               var statusCounts = response.Tokens.GroupBy(t => t.TranslationStatus).ToDictionary(g => g.Key, g => g.Count());
+               _logger.LogInformation("Received tokens with TranslationStatus: {Statuses}", string.Join(", ", statusCounts.Select(kv => $"{kv.Key}={kv.Value}")));
+            }
+
+            
             if (response?.ErrorCode != null)
             {
                 _logger.LogError("Soniox API Error ({Code}): {Message}", response.ErrorCode, response.ErrorMessage);
@@ -305,19 +313,26 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             var nonFinalTokens = response.Tokens.Where(t => !t.IsFinal).ToList();
             if (nonFinalTokens.Count > 0)
             {
-                var text = string.Join("", nonFinalTokens.Select(t => t.Text));
-                var speaker = nonFinalTokens.FirstOrDefault(t => t.Speaker != null)?.Speaker;
-                var lang = nonFinalTokens.FirstOrDefault(t => t.Language != null)?.Language;
-                var status = nonFinalTokens.FirstOrDefault(t => t.TranslationStatus != null)?.TranslationStatus;
-                OnTranscriptReceived?.Invoke(new TranscriptResult
+                // Fix: Group non-final tokens by TranslationStatus to support simultaneous streams
+                var groups = nonFinalTokens.GroupBy(t => t.TranslationStatus ?? "none").ToList();
+
+                foreach (var group in groups)
                 {
-                    Text = text,
-                    IsFinal = false,
-                    Speaker = speaker,
-                    DetectedLanguage = lang,
-                    TranslationStatus = status,
-                    Timestamp = DateTime.UtcNow
-                });
+                    var text = string.Join("", group.Select(t => t.Text));
+                    var speaker = group.FirstOrDefault(t => t.Speaker != null)?.Speaker;
+                    var lang = group.FirstOrDefault(t => t.Language != null)?.Language;
+                    var translationStatus = group.Key == "none" ? null : group.Key;
+
+                    OnTranscriptReceived?.Invoke(new TranscriptResult
+                    {
+                        Text = text,
+                        IsFinal = false,
+                        Speaker = speaker,
+                        DetectedLanguage = lang,
+                        TranslationStatus = translationStatus,
+                        Timestamp = DateTime.UtcNow
+                    });
+                }
             }
         }
         catch (Exception ex) 
