@@ -13,6 +13,12 @@ public class TranscriptResult
     public string Text { get; set; } = string.Empty;
 
     /// <summary>
+    /// Holds the provisional (non-final) text for the current turn.
+    /// This allows the UI to display the "growing" sentence within the same card.
+    /// </summary>
+    public string PartialText { get; set; } = string.Empty;
+
+    /// <summary>
     /// Indicates whether this result is final (confirmed text) or partial (provisional text).
     /// </summary>
     public bool IsFinal { get; set; }
