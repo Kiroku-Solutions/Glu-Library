@@ -150,6 +150,7 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDispos
             EnableLanguageIdentification = sessionConfig?.EnableLanguageIdentification ?? true,
             // M1: Use dynamic hints, not hardcoded
             LanguageHints = sessionConfig?.LanguageHints ?? new List<string>(),
+            LanguageHintsStrict = sessionConfig?.LanguageHintsStrict ?? true,
             // M4: Translation
             Translation = sessionConfig?.Translation,
             // Client Reference ID

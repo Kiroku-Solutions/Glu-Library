@@ -50,6 +50,13 @@ public class SonioxStartRequest
     public List<string> LanguageHints { get; set; } = new() { "en", "es" };
 
     /// <summary>
+    /// When true, the model will strongly prefer producing output only in the specified languages.
+    /// Helpful to prevent bleeding of languages across speakers.
+    /// </summary>
+    [JsonPropertyName("language_hints_strict")]
+    public bool LanguageHintsStrict { get; set; } = true;
+
+    /// <summary>
     /// Enables automatic detection of the spoken language.
     /// </summary>
     [JsonPropertyName("enable_language_identification")]

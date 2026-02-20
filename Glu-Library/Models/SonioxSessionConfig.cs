@@ -29,6 +29,12 @@ public class SonioxSessionConfig
     /// </summary>
     public List<string>? LanguageHints { get; set; }
 
+    /// <summary>
+    /// When true, the model will strongly prefer producing output only in the specified languages.
+    /// Helpful to prevent language bleeding.
+    /// </summary>
+    public bool LanguageHintsStrict { get; set; }
+
 
 
     /// <summary>
