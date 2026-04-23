@@ -1,0 +1,43 @@
+name: Publish NuGet Package
+
+on:
+  push:
+    branches:
+      - main  # Se ejecuta al pushear a main
+  workflow_dispatch: # Permite ejecución manual desde la pestaña Actions
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # Importante para poder subir el paquete
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          # Configura la fuente de NuGet automáticamente
+          source-url: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Pack
+        # Crea el paquete .nupkg
+        # El flag --no-build evita recompilar. El output va a la carpeta 'out'
+        run: dotnet pack --configuration Release --no-build --output out
+
+      - name: Publish to GitHub Packages
+        # Sube todos los .nupkg generados en la carpeta 'out'
+        # Se usa GITHUB_TOKEN que GitHub genera automáticamente para el job
+        run: dotnet nuget push "./out/*.nupkg" --api-key ${{ secrets.GITHUB_TOKEN }} --source "github" --skip-duplicate
