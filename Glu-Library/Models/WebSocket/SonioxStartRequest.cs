@@ -50,11 +50,29 @@ public class SonioxStartRequest
     public List<string> LanguageHints { get; set; } = new() { "en", "es" };
 
     /// <summary>
+    /// When true, the model will strongly prefer producing output only in the specified languages.
+    /// Helpful to prevent bleeding of languages across speakers.
+    /// </summary>
+    [JsonPropertyName("language_hints_strict")]
+    public bool LanguageHintsStrict { get; set; } = true;
+
+    /// <summary>
+    /// Enables automatic detection of the spoken language.
+    /// </summary>
+    [JsonPropertyName("enable_language_identification")]
+    public bool EnableLanguageIdentification { get; set; } = true;
+
+    /// <summary>
     /// Enables detection and labeling of different speakers in the audio stream.
     /// </summary>
-    // ⚠️ FIX: Changed from "enable_global_speaker_diarization" to "enable_speaker_diarization"
     [JsonPropertyName("enable_speaker_diarization")] 
-    public bool EnableGlobalSpeakerDiarization { get; set; } = true;
+    public bool EnableSpeakerDiarization { get; set; } = true;
+
+    /// <summary>
+    /// Optional: Specify the number of speakers if known (2-5).
+    /// </summary>
+    [JsonPropertyName("num_speakers")]
+    public int? NumSpeakers { get; set; }
 
     /// <summary>
     /// Enables automatic detection of end-of-utterance to finalize text segments faster.
@@ -65,9 +83,21 @@ public class SonioxStartRequest
     // --- Advanced Features ---
 
     /// <summary>
+    /// Configuration for real-time translation (one-way or two-way).
+    /// </summary>
+    [JsonPropertyName("translation")]
+    public SonioxTranslationConfig? Translation { get; set; }
+
+    /// <summary>
     /// Optional context information to improve transcription accuracy for specific domains.
     /// </summary>
     [JsonPropertyName("context")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SonioxContext? Context { get; set; }
+
+    /// <summary>
+    /// Client-defined identifier to track this request in logs/webhooks.
+    /// </summary>
+    [JsonPropertyName("client_reference_id")]
+    public string? ClientReferenceId { get; set; }
 }

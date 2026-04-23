@@ -1,0 +1,493 @@
+## Soniox docs summary:
+
+Table of contents (links to pages)
+- Community and support — https://soniox.com/docs/community-and-support
+- Introduction — https://soniox.com/docs/
+- Get started — https://soniox.com/docs/stt/get-started
+- Models — https://soniox.com/docs/stt/models
+- Security and privacy — https://soniox.com/docs/stt/security-and-privacy
+- Web SDK — https://soniox.com/docs/stt/SDKs/web-sdk
+- API reference — https://soniox.com/docs/stt/api-reference
+- WebSocket API — https://soniox.com/docs/stt/api-reference/websocket-api
+- Async transcription — https://soniox.com/docs/stt/async/async-transcription
+- Async translation — https://soniox.com/docs/stt/async/async-translation
+- Error handling (async) — https://soniox.com/docs/stt/async/error-handling
+- Limits & quotas (async) — https://soniox.com/docs/stt/async/limits-and-quotas
+- Webhooks — https://soniox.com/docs/stt/async/webhooks
+- Confidence scores — https://soniox.com/docs/stt/concepts/confidence-scores
+- Context — https://soniox.com/docs/stt/concepts/context
+- Language hints — https://soniox.com/docs/stt/concepts/language-hints
+- Language identification — https://soniox.com/docs/stt/concepts/language-identification
+- Speaker diarization — https://soniox.com/docs/stt/concepts/speaker-diarization
+- Supported languages — https://soniox.com/docs/stt/concepts/supported-languages
+- Timestamps — https://soniox.com/docs/stt/concepts/timestamps
+- Soniox Live — https://soniox.com/docs/stt/demo-apps/soniox-live
+- Best practices — https://soniox.com/docs/stt/guides/best-practices
+- Direct stream — https://soniox.com/docs/stt/guides/direct-stream
+- Proxy stream — https://soniox.com/docs/stt/guides/proxy-stream
+- Community integrations — https://soniox.com/docs/stt/integrations/community-integrations
+- LiveKit — https://soniox.com/docs/stt/integrations/livekit
+- Pipecat — https://soniox.com/docs/stt/integrations/pipecat
+- Twilio — https://soniox.com/docs/stt/integrations/twilio
+- Connection keepalive — https://soniox.com/docs/stt/rt/connection-keepalive
+- Endpoint detection — https://soniox.com/docs/stt/rt/endpoint-detection
+- Error handling (real-time) — https://soniox.com/docs/stt/rt/error-handling
+- Limits & quotas (real-time) — https://soniox.com/docs/stt/rt/limits-and-quotas
+- Manual finalization — https://soniox.com/docs/stt/rt/manual-finalization
+- Real-time transcription — https://soniox.com/docs/stt/rt/real-time-transcription
+- Real-time translation — https://soniox.com/docs/stt/rt/real-time-translation
+- Create temporary API key — https://soniox.com/docs/stt/api-reference/auth/create_temporary_api_key
+- Files API: Delete file — https://soniox.com/docs/stt/api-reference/files/delete_file
+- Files API: Get file — https://soniox.com/docs/stt/api-reference/files/get_file
+- Files API: Get file URL — https://soniox.com/docs/stt/api-reference/files/get_file_url
+- Files API: Get files — https://soniox.com/docs/stt/api-reference/files/get_files
+- Files API: Upload file — https://soniox.com/docs/stt/api-reference/files/upload_file
+- Get models — https://soniox.com/docs/stt/api-reference/models/get_models
+- Create transcription — https://soniox.com/docs/stt/api-reference/transcriptions/create_transcription
+- Delete transcription — https://soniox.com/docs/stt/api-reference/transcriptions/delete_transcription
+- Get transcription — https://soniox.com/docs/stt/api-reference/transcriptions/get_transcription
+- Get transcription transcript — https://soniox.com/docs/stt/api-reference/transcriptions/get_transcription_transcript
+- Get transcriptions — https://soniox.com/docs/stt/api-reference/transcriptions/get_transcriptions
+
+Community and support
+- Channels: GitHub for issues and code (https://github.com/soniox); Discord for fast support and discussion (https://discord.gg/rWfnk9uM5j).
+- Docs MCP server: add remote config to your dev tool to query docs (example npx mcp-remote URL snippet).
+- Website: https://soniox.com for product, billing, Console.
+
+Introduction
+- Soniox offers production-ready Speech-to-Text (STT) + translation APIs (async files + real-time streaming), speaker diarization, language ID, context/customization, timestamps, confidence scores.
+- Console: signup and manage API keys, usage, billing at https://console.soniox.com.
+
+Get started (STT)
+- Quick flow:
+  1. Create Soniox account and obtain API key (Console).
+  2. Clone examples repository (https://github.com/soniox/soniox_examples) and run samples.
+  3. Try real-time and async examples (Python/Node) included in repo.
+- Environment example:
+  export SONIOX_API_KEY=<YOUR_API_KEY>
+- Example commands (Python):
+  python soniox_realtime.py --audio_path ../assets/coffee_shop.mp3
+  python soniox_async.py --audio_url "https://soniox.com/media/examples/coffee_shop.mp3"
+
+Models
+- Active models:
+  - stt-rt-v3 — Real-time (active)
+  - stt-async-v3 — Async (active)
+- Aliases for stability: stt-rt-v3-preview → stt-rt-v3, stt-async-preview-v1 → stt-async-v3, etc.
+- v3 model improvements: up to 5 hours audio, better multilingual switching, higher accuracy, improved diarization and translation.
+- To upgrade: replace model name field: {"model": "stt-rt-v3"} or {"model": "stt-async-v3"}.
+
+Security and privacy
+- Certifications: SOC 2 Type 2, GDPR, HIPAA support. Request compliance docs via support@soniox.com.
+- Data handling:
+  - No model training on customer audio.
+  - No retention unless user opts for storage (e.g., using Files API).
+  - Stored data isolated per account; deletable via Console/API.
+- Logging: minimal; logs never contain raw audio/transcripts.
+- Encryption: TLS 1.2+ in transit, industry-standard at rest; access restricted by API keys.
+
+Web SDK (speech-to-text-web)
+- Purpose: official JS/TS client to use Real-Time API from browsers. Captures mic audio, streams to Soniox, returns partial/final tokens.
+- Install: npm install @soniox/speech-to-text-web (or yarn/pnpm). CDN import available.
+- Quickstart (essentials):
+  - Construct SonioxClient({ apiKey, bufferQueueSize?, callbacks... })
+  - start({ model, languageHints, context, enableSpeakerDiarization, enableLanguageIdentification, enableEndpointDetection, translation, stream, audioConstraints, mediaRecorderOptions, onPartialResult, onFinished, onError })
+  - stop() — graceful; cancel() — immediate.
+- Translation config examples:
+  - One-way: { type: "one_way", target_language: "en" }
+  - Two-way: { type: "two_way", language_a: "en", language_b: "es" }
+- Temporary API keys: pass apiKey as async function that fetches a temporary key from your server; audio buffered until key arrives.
+- Custom MediaStream: pass stream option (you manage lifecycle).
+
+API reference (overview)
+- Base: https://api.soniox.com/v1
+- Major groups:
+  - Auth API: POST /v1/auth/temporary-api-key
+  - Files API: POST /v1/files (upload), GET /v1/files, GET /v1/files/{file_id}, GET /v1/files/{file_id}/url, DELETE /v1/files/{file_id}
+  - Models API: GET /v1/models
+  - Transcriptions API: POST /v1/transcriptions, GET /v1/transcriptions, GET /v1/transcriptions/{id}, GET /v1/transcriptions/{id}/transcript, DELETE /v1/transcriptions/{id}
+- WebSocket API (real-time): wss://stt-rt.soniox.com/transcribe-websocket
+
+WebSocket API (real-time)
+- Endpoint: wss://stt-rt.soniox.com/transcribe-websocket
+- Session start: send initial JSON config text message (before sending binary audio frames).
+- Example start message (concise):
+
+{
+  "api_key": "<API_KEY|TEMP_KEY>",
+  "model": "stt-rt-v3",
+  "audio_format": "auto",
+  "language_hints": ["en","es"],
+  "context": {
+    "general": [{"key":"domain","value":"Healthcare"}, ...],
+    "text": "Long background text ...",
+    "terms": ["Celebrex", "Zyrtec"],
+    "translation_terms":[{"source":"Mr. Smith","target":"Sr. Smith"}]
+  },
+  "enable_speaker_diarization": true,
+  "enable_language_identification": true,
+  "enable_endpoint_detection": true,
+  "translation": { "type":"two_way", "language_a":"en", "language_b":"es" },
+  "client_reference_id": "optional-string"
+}
+
+- After config, stream audio as binary WebSocket frames (or send empty frame/text to end audio).
+- Controls (JSON control messages during session):
+  - Keepalive: {"type":"keepalive"} — send at least every 20s when audio paused.
+  - Finalize: {"type":"finalize"} or with trailing_silence_ms: {"type":"finalize","trailing_silence_ms":300}.
+  - Manual control messages must be sent as JSON text frames.
+
+Audio formats
+- audio_format: "auto" recommended for browser/containers.
+- Raw audio needs audio_format + sample_rate + num_channels.
+- Supported raw encodings: pcm_s16le, pcm_s32le, pcm_f32le, pcm_s8, pcm_u8, pcm_s24, mulaw, alaw, etc. (see docs for full list).
+- Each stream supports up to 300 minutes (5 hours) audio.
+
+Responses (JSON)
+- Typical token response:
+
+{
+  "tokens": [
+    { "text":"Hello", "start_ms":600, "end_ms":760, "confidence":0.97, "is_final":true, "speaker":"1", "language":"en" }
+  ],
+  "final_audio_proc_ms": 760,
+  "total_audio_proc_ms": 880
+}
+
+- Finished response (session complete):
+
+{
+  "tokens": [],
+  "final_audio_proc_ms": 1560,
+  "total_audio_proc_ms": 1680,
+  "finished": true
+}
+
+- Error response (server returns then closes connection):
+
+{
+  "tokens": [],
+  "error_code": 503,
+  "error_message": "Cannot continue request (code N). Please restart the request..."
+}
+
+Token fields (per-token)
+- text (string)
+- start_ms, end_ms (numbers, ms) — for spoken/original tokens (not for translated tokens)
+- confidence (0.0–1.0)
+- is_final (boolean) — finalized tokens are stable and never change
+- speaker (string) — present if diarization enabled
+- translation_status — "none" | "original" | "translation"
+- language (ISO code) — language of token.text
+- source_language — present for translation tokens (source original language)
+
+Translation (real-time)
+- Modes:
+  - one_way: translate all spoken languages into single target language (translation.target_language required)
+  - two_way: translate between language_a and language_b (language_a/language_b required)
+- Token stream: transcription tokens (translation_status: "original" or "none") appear first with timestamps; translation tokens (translation_status: "translation") follow and do not include timestamps.
+- Translations stream mid-sentence (low-latency) and may not align 1:1 with tokens.
+- Example token fields for translated token: {"text":"Bonjour", "translation_status":"translation","language":"fr","source_language":"en"}
+
+Endpoint detection & manual finalization
+- enable_endpoint_detection: model detects end of utterance and emits <end> token (is_final true). Use to trigger downstream actions.
+- Manual finalize: send {"type":"finalize"}; server finalizes pending tokens and emits {"text":"<fin>", "is_final":true}.
+- For trailing silence optimization: {"type":"finalize","trailing_silence_ms":300}.
+
+Connection keepalive
+- Send {"type":"keepalive"} at least every 20s when no audio to prevent session timeout. Charge accrues for stream duration.
+
+Errors and codes (summary)
+- 400 Bad Request — malformed request or invalid params (missing audio_format for PCM, invalid model, context too long, no audio, audio decode errors, received too much audio, etc.)
+- 401 Unauthorized — missing/invalid API key or expired temporary key
+- 402 Payment required — billing/usage limits reached
+- 408 Request timeout — inactivity, slow input, start timeout, audio decode timeout
+- 429 Too many requests — rate/usage limits exceeded, concurrent requests
+- 500 Internal server error — retry, contact support if persistent
+- 503 Service unavailable — request cannot continue ("Cannot continue request (code N)"), client should restart the request
+
+Async transcription (files)
+- Use the Files API to upload local audio then create transcription referencing file_id; or pass audio_url for public URLs.
+- Submit a transcription job: POST /v1/transcriptions with JSON body containing:
+  - model, audio_url or file_id (one required), language_hints, context, enable_speaker_diarization (bool), enable_language_identification (bool), translation (one_way/two_way), client_reference_id, webhook_url, webhook_auth_header_name, webhook_auth_header_value.
+- Polling: GET /v1/transcriptions/{transcription_id} — returns status (pending, processing, completed, error) and details.
+- Retrieve full transcript: GET /v1/transcriptions/{id}/transcript — returns tokens (same token structure as real-time for completed jobs).
+- Delete: DELETE /v1/transcriptions/{id} — permanently deletes transcript and associated files (cannot delete while processing).
+- Example (Python flow summary):
+  1. Optionally upload: POST /v1/files (multipart/form-data file)
+  2. Create transcription: POST /v1/transcriptions {model, file_id|audio_url, ...}
+  3. Poll GET /v1/transcriptions/{id} until status completed or error
+  4. GET /v1/transcriptions/{id}/transcript to get tokens/text
+  5. Optionally DELETE transcription and DELETE file(s)
+
+Files API (summary)
+- POST /v1/files — upload file; returns id. Use multipart/form-data "file".
+- GET /v1/files — list files (pagination via next_page_cursor)
+- GET /v1/files/{file_id} — metadata for uploaded file
+- GET /v1/files/{file_id}/url — temporary (1-hour) signed URL for download
+- DELETE /v1/files/{file_id} — delete file permanently
+
+Create temporary API key
+- POST /v1/auth/temporary-api-key
+- Purpose: issue short-lived client keys for browser direct connections to WebSocket API.
+- Required example body:
+  { "usage_type": "transcribe_websocket", "expires_in_seconds": 60 }
+- Temporary keys should be created on server side (use your long-lived API key) and returned to clients.
+
+Webhooks (async)
+- Provide webhook_url in transcription creation. Soniox sends POST when transcription completes or fails:
+  { "id": "<transcription_id>", "status": "completed" | "error" }
+- Authentication: provide webhook_auth_header_name and webhook_auth_header_value during transcription creation — Soniox includes the header in deliveries.
+- Retry: Soniox retries several times; if permanently failed you can fetch results by transcription ID. Add query params to your webhook URL for metadata (e.g., ?customer_id=123).
+
+Confidence scores
+- Every token includes confidence (0.0–1.0). Use it to flag uncertain words for review/UI or post-processing.
+
+Context (customization)
+- context object improves transcription/translation: supports up to four sections:
+  - general: array of {key, value} pairs (domain, topic, participants). Recommend ≤10 key-value pairs.
+  - text: long unstructured text (background docs, meeting notes).
+  - terms: array of strings (custom vocabulary, uncommon terms).
+  - translation_terms: array of {source, target} for custom translations/preservations.
+- Size limit: ~8,000 tokens (~10,000 chars). Too large → API error. Use to bias recognition and translations.
+
+Language hints
+- language_hints: array of ISO language codes (e.g., ["en","es"]). Hint biases recognition toward listed languages but does not restrict detection.
+- Useful when likely languages known and for rare/similar languages.
+
+Language identification
+- enable_language_identification: true → each token includes language field.
+- Token-level labeling, but model aims for sentence-level coherence; in real-time initial misclassifications may be revised as more context arrives.
+
+Speaker diarization
+- enable_speaker_diarization: true → tokens include speaker labels (e.g., "1","2"). Up to 15 speakers supported.
+- Async diarization generally more accurate than real-time due to full-context processing.
+
+Timestamps
+- start_ms and end_ms are provided for tokens (in ms). Always included by default for spoken tokens (not for translated tokens).
+
+Supported languages
+- 60+ languages supported for transcription and translation. (List included in docs; ISO code examples: en, es, de, fr, zh, ja, ko, etc.)
+- Programmatic retrieval: GET /v1/models returns supported languages metadata.
+
+Real-time transcription (behavior)
+- Token stream: non-final tokens (is_final:false) for immediate feedback; final tokens (is_final:true) eventually emitted and stable.
+- Audio progress metrics per response:
+  - final_audio_proc_ms — audio processed into final tokens
+  - total_audio_proc_ms — audio processed into final + non-final tokens
+- Ways to obtain final tokens sooner: endpoint detection or manual finalize.
+
+Real-time translation (behavior)
+- Transcription always produced; translations emitted as separate tokens (translation_status: "translation") following original tokens.
+- Timestamps present for original tokens only.
+- One-way and two-way modes supported (see translation object fields).
+
+Best practices
+- Provide language_hints and context when available for better accuracy.
+- Use endpoint_detection or finalize to control latency vs accuracy tradeoffs.
+- For real-time low-latency UIs: display non-final tokens live; act on final tokens or on <end>/<fin> markers.
+- For speaker attribution and difficult audio, prefer async processing for higher diarization accuracy.
+
+Direct stream (browser)
+- Architecture: client obtains temporary API key from your server, uses RecordTranscribe / SonioxClient to connect directly to WebSocket endpoint and stream microphone audio.
+- Temporary API key creation: server-side POST /v1/auth/temporary-api-key with usage_type "transcribe_websocket" and short expires_in_seconds (ex: 60).
+- Client flow (minimal):
+  1. fetch('/temporary-api-key') on server
+  2. new RecordTranscribe({ apiKey: temporaryApiKey })
+  3. start({ model:"stt-rt-v3", languageHints:["en"], onPartialResult, onFinished })
+  4. stop() to finalize or cancel()
+- HTML example exists in repo (index.html) showing obtaining temp key and using RecordTranscribe.
+
+Proxy stream
+- Pattern: client streams audio to your proxy WebSocket; proxy connects to Soniox WebSocket with your long-lived API key, forwards audio and relays responses.
+- Useful when server-side inspection/transformation/storage required. Direct stream recommended for lowest latency.
+
+Examples & SDKs / Integrations
+- LiveKit plugin, Pipecat integration, Twilio streaming examples available in GitHub repos referenced in docs.
+- Twilio: stream call audio (Start Stream TwiML) to your websocket server which forwards to Soniox; examples & repo provided.
+- Pipecat: SonioxSTTService integrates with Pipecat pipelines; supports language_hints, context, vad_force_turn_endpoint options.
+
+Limits & quotas
+- Files (async):
+  - Total file storage: default 10 GB
+  - Uploaded files: default 1,000
+  - File duration: 300 minutes (5 hours) — fixed
+- Transcription counts:
+  - Pending transcriptions limit: 100
+  - Total transcriptions (pending + completed + failed): 2,000
+- WebSocket real-time:
+  - Requests per minute: 100
+  - Concurrent connections per project/org: 10
+  - Stream duration: 300 minutes per session
+- To increase most limits use Soniox Console (except audio duration).
+
+Error handling (async & real-time)
+- Async:
+  - File upload errors: check duration ≤ 300 minutes, storage/quota; recover by deleting files or requesting higher limits.
+  - Transcription creation: respect pending/total transcription limits; delete older results if needed.
+  - Webhook failures: Soniox retries; if permanently failed, fetch transcription result via API using transcription ID.
+- Real-time:
+  - Errors are returned in JSON and connection closed. Log error_code and error_message. For "Cannot continue request" 503, start a fresh session.
+  - If audio input is too slow or missing start message within timeouts, server closes connection (408).
+
+Representative code snippets (condensed)
+
+1) WebSocket start config (JSON)
+{
+  "api_key":"<API_KEY>",
+  "model":"stt-rt-v3",
+  "audio_format":"auto",
+  "language_hints":["en","es"],
+  "context":{ "terms":["TermA","TermB"], "text":"Background..." },
+  "enable_speaker_diarization": true,
+  "enable_language_identification": true,
+  "enable_endpoint_detection": true
+}
+
+2) End-of-audio signal
+- Send an empty WebSocket frame/string to indicate end-of-audio; server will return finished response and close connection.
+
+3) Create async transcription (curl-style)
+POST https://api.soniox.com/v1/transcriptions
+Headers: Authorization: Bearer $SONIOX_API_KEY
+Body (JSON):
+{
+  "model":"stt-async-v3",
+  "audio_url":"https://example.com/audio.mp3",
+  "language_hints":["en","es"],
+  "enable_speaker_diarization": true,
+  "context": { "terms":["BrandX"], "text":"Meeting notes..." },
+  "translation": { "type":"one_way", "target_language":"es" },
+  "client_reference_id":"MyRef123",
+  "webhook_url":"https://example.com/webhook",
+  "webhook_auth_header_name":"Authorization",
+  "webhook_auth_header_value":"Bearer secret"
+}
+
+4) Temporary API key creation (server-side)
+POST https://api.soniox.com/v1/auth/temporary-api-key
+Headers: Authorization: Bearer <SONIOX_API_KEY>, Content-Type: application/json
+Body:
+{ "usage_type":"transcribe_websocket", "expires_in_seconds":60 }
+Response: { "api_key":"<temporary_key>", "expires_in_seconds":60, ... }
+
+5) Minimal Web SDK (client) pattern (pseudo):
+const client = new SonioxClient({ apiKey: async () => fetch('/tmp-key').then(r=>r.json()).then(j=>j.api_key) });
+client.start({
+  model:'stt-rt-v3',
+  languageHints:['en'],
+  context:'Product names, jargon...',
+  enableSpeakerDiarization:true,
+  onPartialResult: r => console.log(r.tokens),
+  onFinished: ()=>console.log('done')
+});
+
+6) Python real-time snippet (pseudo):
+ws = connect("wss://stt-rt.soniox.com/transcribe-websocket")
+ws.send(json.dumps(config))
+# stream binary chunks
+ws.send(binary_chunk)  # repeat
+# end
+ws.send("")
+
+Repository examples
+- Full runnable samples in the official examples repo: https://github.com/soniox/soniox_examples — includes python/node real-time and async samples, direct stream, proxy stream, Soniox Live demo.
+
+Where to find more
+- API OpenAPI spec and full endpoint schemas available in the API Reference pages (links in TOC).
+- Example repos and integration guides contain full runnable code.
+
+This summary preserves key pages, endpoints, required parameters, response formats, common control messages, error handling, limits, SDK usage and representative code snippets to implement both async and real-time transcription/translation flows.
+
+## Soniox website summary:
+
+Helping startups and enterprises ship real world voice apps
+- Production-ready real-time voice AI: transcription, translation, and understanding in 60+ languages. Low-latency, speaker-aware, works in noisy/overlapping real-world audio.
+
+For developers
+- Single API for real-time streaming and asynchronous (file) transcription, translation, speaker separation, language detection, domain hints, structured JSON.
+- Docs & API reference: https://soniox.com/docs
+
+For everyone
+- Mobile app demonstrating live transcription, translation, summaries, speaker labels, export and privacy-first processing.
+- iOS App: https://apps.apple.com/us/app/soniox/id1560199731
+- Android App: https://play.google.com/store/apps/details?id=com.soniox.sonioxmobileapp
+
+Explore the API
+- Real-time token-level output (milliseconds), async file mode, unified stream for transcription+translation, domain/context hints, alphanumeric accuracy, endpoint detection, speaker diarization.
+- Start: create account & generate API key (see docs)
+
+Everything you need to build great voice apps (Soniox Speech-to-Text AI)
+- One universal model for 60+ languages (real-time + async)
+- Features: instant translation, language ID, speaker labels, timestamps, punctuation, structured output, custom terms/context
+- Privacy & compliance: audio processed in memory by default; SOC 2 Type II, HIPAA-ready, GDPR-aligned
+
+About us
+- Mission: make speech AI universal — understand people through audio.
+- Founded: 2020; breakthrough unsupervised training for speech recognition.
+- Founding team:
+  - Klemen Simonic — Founder, CEO
+  - Ambroz Bizjak — Co-founder, Chief Architect
+- Locations:
+  - Soniox: 1045 Helm Ln, Foster City, CA 94404, United States
+  - Soniox Europe: Cesta v Gorice 34B, 1000 Ljubljana, Slovenia
+
+Benchmarks
+- Independent multi-language benchmarks (60 languages, real-world YouTube datasets) show Soniox achieving top accuracy vs major providers. Benchmark report available on site.
+
+Blog (highlights)
+- Soniox v3 — Oct 21, 2025: major model update (stt-rt-v3, stt-async-v3)
+- Free credits update — Oct 27, 2025
+- Real-time speech translation launch — Jun 17, 2025
+- Introducing Soniox app — May 6, 2025
+- Full blog archive on site
+
+Compare
+- Soniox Compare: live side-by-side real-time tests vs other providers; open-source framework so you can reproduce tests.
+
+Contact
+- General / partnerships: info@soniox.com
+- Technical / support: support@soniox.com
+- Feedback / product: hello@soniox.com
+- Community Discord: https://discord.gg/rWfnk9uM5j
+
+Policies / Compliance
+- Default: audio not stored or used to train models unless explicitly requested.
+- Certifications: SOC 2 Type II, HIPAA-ready; GDPR compliance.
+- To request data compliance documentation: support@soniox.com
+
+Pricing (summary)
+- Token-based pricing; simple hourly equivalents:
+  - Approx. $0.12 / hour (real-time streaming)
+  - Approx. $0.10 / hour (async/file)
+- Mobile app: free tier (10 weekly credits); Soniox Pro $19.99/month (unlimited, priority processing)
+
+Soniox App (mobile)
+- Live transcription, translation, speaker labels, summaries, to-dos, emotion/tone insights, export.
+- Privacy-first: audio processed in memory, not used to train models by default.
+- Get apps:
+  - iOS: https://apps.apple.com/us/app/soniox/id1560199731
+  - Android: https://play.google.com/store/apps/details?id=com.soniox.sonioxmobileapp
+
+Soniox API
+- One API to transcribe, translate, detect language, separate speakers, and stream token-level output for fast voice apps.
+- Use cases: voice agents, call centers, media captions, medical transcription, analytics, wearables, real-time translation.
+- Docs: https://soniox.com/docs
+
+Use cases (brief)
+- Call centers & support automation: live multilingual transcription, summaries, structured output for CRM/QA.
+- Real-time media transcription: captions, subtitles, speaker labels, publish-ready transcripts.
+- Medical transcription: HIPAA-ready real-time clinical notes, custom medical vocab, speaker labels.
+- Real-time speech analytics: sentiment, tone, compliance, live coaching.
+- Translate speech instantly in 60+ languages: any-to-any streaming, mid-sentence switching.
+- Build real-time voice agents: low-latency, structured transcripts for routing, triage, assistants.
+- Power wearable apps: lightweight real-time speech for watches, glasses, earbuds; private processing.
+
+Key links & contacts
+- Docs: https://soniox.com/docs
+- iOS app: https://apps.apple.com/us/app/soniox/id1560199731
+- Android app: https://play.google.com/store/apps/details?id=com.soniox.sonioxmobileapp
+- Discord: https://discord.gg/rWfnk9uM5j
+- Email: info@soniox.com, support@soniox.com, hello@soniox.com
+
+(End of site summary)

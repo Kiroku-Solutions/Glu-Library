@@ -3,8 +3,8 @@ using Glu_Library.Models;
 namespace Glu_Library.Services.Interfaces;
 
 /// <summary>
-/// Defines the contract for managing the state of a transcription session.
-/// Responsible for aggregating partial results and maintaining a history of finalized segments.
+/// Defines the state management contract for a transcription session.
+/// Responsible for maintaining finalized speaker segments and the current partial transcript.
 /// </summary>
 public interface ITranscriptState
 {
@@ -17,9 +17,14 @@ public interface ITranscriptState
     /// <summary>
     /// Gets the current partial (non-finalized) transcription hypothesis.
     /// Represents real-time feedback that may change as more audio is processed.
-    /// Returns null if there is no active partial speech.
     /// </summary>
     TranscriptResult? CurrentPartial { get; }
+    
+    /// <summary>
+    /// Gets or sets the ID of the speaker considered to be the Agent (e.g., Doctor).
+    /// Defaults to "2". When this changes, subsequent segments will be classified accordingly.
+    /// </summary>
+    string AgentSpeakerId { get; set; }
 
     /// <summary>
     /// Event raised whenever the transcript state (Segments or CurrentPartial) changes.
@@ -29,14 +34,12 @@ public interface ITranscriptState
 
     /// <summary>
     /// Processes a raw transcript result received from the WebSocket client.
-    /// Logic includes determining if the result is final or partial and updating the internal lists accordingly.
     /// </summary>
     /// <param name="result">The normalized transcript result to process.</param>
     void ProcessResult(TranscriptResult result);
 
     /// <summary>
-    /// Resets the internal state, clearing all history and partial text.
-    /// Typically called when starting a new recording session.
+    /// Clears all transcript state, including history and partial text.
     /// </summary>
     void Reset();
 }

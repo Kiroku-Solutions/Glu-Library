@@ -20,6 +20,24 @@ public interface ISonioxWebSocketClient : IAsyncDisposable
     event Action<Exception>? OnError;
 
     /// <summary>
+    /// Gets or sets the sample rate of the incoming audio stream (e.g., 16000, 48000).
+    /// </summary>
+    /// <summary>
+    /// Event raised when the connection state changes (True = Connected, False = Disconnected).
+    /// </summary>
+    event Action<bool>? OnConnectionStateChanged;
+
+    /// <summary>
+    /// Gets a value indicating whether the client is currently connected.
+    /// </summary>
+    bool IsConnected { get; }
+
+    /// <summary>
+    /// Gets or sets the sample rate of the incoming audio stream (e.g., 16000, 48000).
+    /// </summary>
+    int SampleRate { get; set; }
+
+    /// <summary>
     /// Establishes the WebSocket connection with the Soniox API and performs the initial handshake
     /// sending the configuration payload.
     /// </summary>
@@ -37,6 +55,11 @@ public interface ISonioxWebSocketClient : IAsyncDisposable
     Task SendAudioAsync(
         ReadOnlyMemory<byte> audioData,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Signals the end of the audio stream to the server.
+    /// </summary>
+    Task StopStreamAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gracefully closes the WebSocket connection and releases resources.

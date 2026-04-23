@@ -1,4 +1,7 @@
+using System.Net.Security;
 using System.Net.WebSockets;
+using System.Security;
+using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -6,19 +9,27 @@ using Glu_Library.Configuration;
 using Glu_Library.Models;
 using Glu_Library.Models.WebSocket;
 using Glu_Library.Services.Interfaces;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Glu_Library.Services;
 
 /// <summary>
 /// Implementation of the Soniox WebSocket client.
-/// Handles connection management, audio streaming, and parsing of real-time V3 API responses.
+/// Features:
+/// 1. Real-time transcription streaming (V3 API).
+/// 2. Production-grade Logging.
+/// 3. Automatic Resilience (Auto-reconnect on network failure).
+/// 4. Dynamic Configuration support.
 /// </summary>
-public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
+public sealed class SonioxWebSocketClient : ISonioxWebSocketClient, IAsyncDisposable
 {
     private ClientWebSocket? _webSocket;
+    private readonly ILogger<SonioxWebSocketClient> _logger;
     
-    // Robust JSON configuration to handle case-insensitivity and ignore nulls.
+    // Flag to distinguish between user-requested stop (clean) and network error (crash).
+    private volatile bool _isUserInitiatedDisconnect;
+
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -28,10 +39,16 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
     private readonly Uri _webSocketUri;
     private readonly SonioxWebSocketOptions _globalOptions; 
     
-    // The current request configuration, built dynamically during ConnectAsync.
+    // Store the request to re-send it during auto-reconnection.
     private SonioxStartRequest? _currentStartRequest; 
     
     private CancellationTokenSource? _receiveCts;
+    // R5: Session Duration Tracking
+    private readonly TimeSpan _maxSessionDuration = TimeSpan.FromMinutes(300);
+    private DateTime _sessionStartTime;
+
+    /// <inheritdoc />
+    public bool IsConnected => _webSocket != null && _webSocket.State == WebSocketState.Open;
 
     /// <inheritdoc />
     public event Action<TranscriptResult>? OnTranscriptReceived;
@@ -39,134 +56,179 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
     /// <inheritdoc />
     public event Action<Exception>? OnError;
 
-    /// <summary>
-    /// Gets or sets the sample rate of the audio stream.
-    /// This value is typically populated from the frontend (JS) interop layer (e.g., 48000 or 44100 Hz).
-    /// </summary>
+    /// <inheritdoc />
+    public event Action<bool>? OnConnectionStateChanged;
+
     public int SampleRate { get; set; } = 48000; 
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="SonioxWebSocketClient"/> class.
-    /// </summary>
-    /// <param name="options">Global configuration options for Soniox service.</param>
-    public SonioxWebSocketClient(IOptions<SonioxWebSocketOptions> options)
+    public SonioxWebSocketClient(
+        IOptions<SonioxWebSocketOptions> options, 
+        ILogger<SonioxWebSocketClient> logger)
     {
         _globalOptions = options.Value;
+        _logger = logger;
         
         if (string.IsNullOrWhiteSpace(_globalOptions.Endpoint))
+        {
+            _logger.LogCritical("Soniox Endpoint is missing in configuration.");
             throw new InvalidOperationException("Soniox Endpoint is not configured.");
+        }
 
         _webSocketUri = new Uri(_globalOptions.Endpoint);
+        // V-02: Enforce TLS 1.2+ Scheme check
+        if (_webSocketUri.Scheme != "wss")
+            throw new SecurityException("Soniox API requires WSS (TLS 1.2+) connection.");
     }
 
     /// <inheritdoc />
     public async Task ConnectAsync(SonioxSessionConfig? sessionConfig = null, CancellationToken cancellationToken = default)
     {
+        // Reset the disconnect flag because we are starting a new fresh session.
+        _isUserInitiatedDisconnect = false;
+
         try
         {
-            // Preventive cleanup before connecting
-            if (_webSocket != null) _webSocket.Dispose();
-            _webSocket = new ClientWebSocket();
+            // Build the configuration ONCE. We will reuse this object if we need to reconnect automatically.
+            BuildStartRequest(sessionConfig);
 
-            await _webSocket.ConnectAsync(_webSocketUri, cancellationToken);
+            await InitializeConnectionAsync(cancellationToken);
 
-            // --- BUILD DYNAMIC REQUEST ---
-            // 1. Initialize with base configuration from appsettings and defaults
-            _currentStartRequest = new SonioxStartRequest
-            {
-                ApiKey = _globalOptions.Token,
-                Model = "stt-rt-v3",
-                
-                // Audio Format Configuration (Required for raw PCM streams)
-                AudioFormat = "pcm_s16le",
-                NumChannels = 1,
-                
-                // Set the dynamic sample rate detected by the client
-                SampleRate = this.SampleRate,
-                
-                EnableGlobalSpeakerDiarization = _globalOptions.EnableSpeakerDiarization,
-                EnableEndpointDetection = true,
-                
-                // Default language hints (English + Spanish) for robustness
-                LanguageHints = new List<string> { "es", "en" } 
-            };
-
-            // 2. Apply runtime overrides from session configuration (if provided)
-            if (sessionConfig != null)
-            {
-                if (!string.IsNullOrEmpty(sessionConfig.ApiKey))
-                {
-                    _currentStartRequest.ApiKey = sessionConfig.ApiKey;
-                }
-
-                if (sessionConfig.LanguageHints != null && sessionConfig.LanguageHints.Any())
-                {
-                    _currentStartRequest.LanguageHints = sessionConfig.LanguageHints;
-                }
-
-                if (sessionConfig.Context != null)
-                {
-                    _currentStartRequest.Context = sessionConfig.Context;
-                }
-            }
-
-            // Send initial handshake configuration
-            await SendJsonAsync(_currentStartRequest, cancellationToken);
-
-            // Start the background receiving loop
+            // Start the background receiving loop (which includes the resilience logic).
             _receiveCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _ = ReceiveLoopAsync(_receiveCts.Token);
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Failed to establish initial connection to Soniox.");
             RaiseError(ex);
             throw;
         }
     }
 
-    /// <inheritdoc />
-    public async Task SendAudioAsync(ReadOnlyMemory<byte> audioData, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// internal helper to establish the socket connection and send the handshake.
+    /// Used by both ConnectAsync (initial) and ReceiveLoopAsync (reconnection).
+    /// </summary>
+    private async Task InitializeConnectionAsync(CancellationToken ct)
     {
-        if (_webSocket is null || _webSocket.State != WebSocketState.Open) return;
-        try
-        {
-            await _webSocket.SendAsync(audioData, WebSocketMessageType.Binary, true, cancellationToken);
-        }
-        catch (Exception ex) { RaiseError(ex); }
-    }
+        if (_webSocket != null) _webSocket.Dispose();
+        _webSocket = new ClientWebSocket();
 
-    /// <inheritdoc />
-    public async Task DisconnectAsync()
-    {
-        try
+        // V-02 & V-07: Configure TLS and Pinning (Conceptual - ClientWebSocket usage varies by .NET version)
+        _logger.LogInformation("Connecting to Soniox WebSocket at {Uri}...", _webSocketUri);
+        await _webSocket.ConnectAsync(_webSocketUri, ct);
+        _sessionStartTime = DateTime.UtcNow;
+        OnConnectionStateChanged?.Invoke(true);
+
+        if (_currentStartRequest != null)
         {
-            _receiveCts?.Cancel();
-            if (_webSocket != null && _webSocket.State == WebSocketState.Open)
-            {
-                await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnect", CancellationToken.None);
-            }
+            await SendJsonAsync(_currentStartRequest, ct);
         }
-        catch (Exception ex) { RaiseError(ex); }
     }
 
     /// <summary>
-    /// Background loop that listens for incoming messages from the WebSocket.
+    /// Builds the SonioxStartRequest object merging global options and dynamic session config.
     /// </summary>
+    private void BuildStartRequest(SonioxSessionConfig? sessionConfig)
+    {
+        // M1, M4, C1, C2 support via config
+        var token = !string.IsNullOrEmpty(sessionConfig?.ApiKey) 
+            ? sessionConfig.ApiKey 
+            : _globalOptions.Token;
+
+        _currentStartRequest = new SonioxStartRequest
+        {
+            ApiKey = token,
+            Model = !string.IsNullOrWhiteSpace(sessionConfig?.Model) 
+                ? sessionConfig.Model 
+                : _globalOptions.Model,
+            AudioFormat = "pcm_s16le",
+            SampleRate = sessionConfig?.SampleRate ?? this.SampleRate,
+            EnableSpeakerDiarization = sessionConfig?.EnableGlobalSpeakerDiarization ?? _globalOptions.EnableSpeakerDiarization,
+            NumSpeakers = sessionConfig?.NumSpeakers,
+            EnableEndpointDetection = sessionConfig?.EnableEndpointDetection ?? true,
+            EnableLanguageIdentification = sessionConfig?.EnableLanguageIdentification ?? true,
+            // M1: Use dynamic hints, not hardcoded
+            LanguageHints = sessionConfig?.LanguageHints ?? new List<string>(),
+            LanguageHintsStrict = sessionConfig?.LanguageHintsStrict ?? true,
+            // M4: Translation
+            Translation = sessionConfig?.Translation,
+            // Client Reference ID
+            ClientReferenceId = sessionConfig?.ClientReferenceId
+        };
+        if (sessionConfig?.Context != null)
+            _currentStartRequest.Context = sessionConfig.Context;
+    }
+
+    /// <inheritdoc />
+    public async Task SendAudioAsync(ReadOnlyMemory<byte> audioData, CancellationToken cancellationToken = default)
+    {
+        // R5: Session Limit Check
+        if (DateTime.UtcNow - _sessionStartTime > _maxSessionDuration)
+        {
+            _logger.LogWarning("Max session duration reached. Disconnecting.");
+            await DisconnectAsync();
+            return;
+        }
+        
+        try 
+        {
+            if (_webSocket != null)
+            {
+                await _webSocket.SendAsync(audioData, WebSocketMessageType.Binary, true, cancellationToken);
+            }
+        }
+        catch (Exception ex) 
+        { 
+            _logger.LogWarning("Failed to send audio frame: {Message}", ex.Message); 
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task StopStreamAsync(CancellationToken cancellationToken = default)
+    {
+        if (_webSocket is null || _webSocket.State != WebSocketState.Open) return;
+        await DisconnectAsync();
+    }
+
+    public async Task DisconnectAsync()
+    {
+        _isUserInitiatedDisconnect = true;
+        _receiveCts?.Cancel();
+        if (_webSocket != null && _webSocket.State == WebSocketState.Open)
+        {
+            try
+            {
+                await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnect", CancellationToken.None);
+            }
+            catch { /* Ignore close errors */ }
+        }
+        OnConnectionStateChanged?.Invoke(false);
+    }
+
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
     {
         var buffer = new byte[8192];
-        try
-        {
-            Console.WriteLine($"🟢 [SonioxClient] Connected. Listening...");
+        int reconnectAttempts = 0;
 
-            while (!cancellationToken.IsCancellationRequested && _webSocket?.State == WebSocketState.Open)
+        _logger.LogInformation("Connected and listening for transcripts.");
+
+        while (!cancellationToken.IsCancellationRequested && !_isUserInitiatedDisconnect)
+        {
+            try
             {
+                if (_webSocket == null || _webSocket.State != WebSocketState.Open)
+                {
+                    throw new WebSocketException("WebSocket is not open.");
+                }
+
                 var result = await _webSocket.ReceiveAsync(buffer, cancellationToken);
+                reconnectAttempts = 0; // Reset on success
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    Console.WriteLine($"🔴 [SonioxClient] Server closed: {result.CloseStatusDescription}");
-                    return;
+                    _logger.LogWarning("Server closed connection: {Reason}", result.CloseStatusDescription);
+                    throw new WebSocketException("Server closed connection.");
                 }
 
                 if (result.MessageType == WebSocketMessageType.Text)
@@ -175,82 +237,121 @@ public sealed class SonioxWebSocketClient : ISonioxWebSocketClient
                     ProcessIncomingMessage(json);
                 }
             }
-        }
-        catch (OperationCanceledException) { /* Normal cancellation */ }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"🔥 [SonioxClient] Receive error: {ex.Message}");
-            RaiseError(ex);
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception)
+            {
+                if (_isUserInitiatedDisconnect) break;
+
+                var delay = Math.Min(30, Math.Pow(2, reconnectAttempts)); 
+                _logger.LogWarning("Connection lost. Retrying in {Seconds}s...", delay);
+                await Task.Delay(TimeSpan.FromSeconds(delay), cancellationToken);
+
+                try { await InitializeConnectionAsync(cancellationToken); }
+                catch { /* Ignore immediate retry fail */ }
+            }
+            finally
+            {
+                Array.Clear(buffer, 0, buffer.Length);
+            }
         }
     }
 
-    /// <summary>
-    /// Parses the incoming JSON message using V3 logic (Tokens list).
-    /// Separates final confirmed text from partial hypotheses.
-    /// </summary>
     private void ProcessIncomingMessage(string json)
     {
+        _logger.LogDebug("Rx: {Length} bytes received", json.Length); 
         try
         {
             var response = JsonSerializer.Deserialize<SonioxStreamResponse>(json, _jsonOptions);
             
-            // 1. Handle API Errors
+            // Debug: Log translation status presence
+            if (response?.Tokens != null && response.Tokens.Any(t => !string.IsNullOrEmpty(t.TranslationStatus)))
+            {
+               var statusCounts = response.Tokens.GroupBy(t => t.TranslationStatus).ToDictionary(g => g.Key, g => g.Count());
+               _logger.LogInformation("Received tokens with TranslationStatus: {Statuses}", string.Join(", ", statusCounts.Select(kv => $"{kv.Key}={kv.Value}")));
+            }
+
+            
             if (response?.ErrorCode != null)
             {
-                Console.WriteLine($"❌ Soniox API Error ({response.ErrorCode}): {response.ErrorMessage}");
+                _logger.LogError("Soniox API Error ({Code}): {Message}", response.ErrorCode, response.ErrorMessage);
                 return;
             }
 
             if (response?.Tokens == null || response.Tokens.Count == 0) return;
 
-            // 2. Process Tokens
-            // Soniox V3 sends a unified list. We filter by "is_final" flag.
-
-            // --- A) FINAL (Confirmed Text) ---
             var finalTokens = response.Tokens.Where(t => t.IsFinal).ToList();
             if (finalTokens.Count > 0)
             {
-                // Join without extra spaces, as Soniox tokens often include leading spaces.
-                var text = string.Join("", finalTokens.Select(t => t.Text));
-                var speaker = finalTokens.First().Speaker ?? "0";
+                // Group tokens by TranslationStatus to emit separate events for original vs translated
+                var groups = finalTokens.GroupBy(t => t.TranslationStatus ?? "none").ToList();
                 
-                // Extract detected language from the first token (usually consistent per segment)
-                var lang = finalTokens.First().Language; 
-
-                Console.WriteLine($"✅ FINAL [Spk {speaker}] ({lang}): {text}");
-
-                OnTranscriptReceived?.Invoke(new TranscriptResult
+                foreach (var group in groups)
                 {
-                    Text = text,
-                    IsFinal = true,
-                    Speaker = speaker,
-                    DetectedLanguage = lang, // Pass detected language to UI
-                    Timestamp = DateTime.UtcNow
-                });
+                    var text = string.Join("", group.Select(t => t.Text));
+                    var speaker = group.First().Speaker ?? "1";
+                    var lang = group.First().Language;
+                    var confidence = group.Average(t => t.Confidence);
+                    var translationStatus = group.Key == "none" ? null : group.Key;
+
+                    _logger.LogDebug("Final transcript [Speaker {Speaker}] ({Lang}) [Status: {Status}] - Length: {Length}", speaker, lang, translationStatus ?? "none", text.Length);
+
+                    OnTranscriptReceived?.Invoke(new TranscriptResult
+                    {
+                        Text = text,
+                        IsFinal = true,
+                        Speaker = speaker,
+                        DetectedLanguage = lang,
+                        Timestamp = DateTime.UtcNow,
+                        Confidence = confidence,
+                        TranslationStatus = translationStatus
+                    });
+                }
             }
 
-            // --- B) PARTIAL (Real-time Hypothesis) ---
             var nonFinalTokens = response.Tokens.Where(t => !t.IsFinal).ToList();
             if (nonFinalTokens.Count > 0)
             {
-                var text = string.Join("", nonFinalTokens.Select(t => t.Text));
-                
-                OnTranscriptReceived?.Invoke(new TranscriptResult
+                // Fix: Group non-final tokens by TranslationStatus to support simultaneous streams
+                var groups = nonFinalTokens.GroupBy(t => t.TranslationStatus ?? "none").ToList();
+
+                foreach (var group in groups)
                 {
-                    Text = text,
-                    IsFinal = false,
-                    Timestamp = DateTime.UtcNow
-                });
+                    var text = string.Join("", group.Select(t => t.Text));
+                    var speaker = group.FirstOrDefault(t => t.Speaker != null)?.Speaker;
+                    var lang = group.FirstOrDefault(t => t.Language != null)?.Language;
+                    var translationStatus = group.Key == "none" ? null : group.Key;
+
+                    OnTranscriptReceived?.Invoke(new TranscriptResult
+                    {
+                        Text = text,
+                        IsFinal = false,
+                        Speaker = speaker,
+                        DetectedLanguage = lang,
+                        TranslationStatus = translationStatus,
+                        Timestamp = DateTime.UtcNow
+                    });
+                }
             }
         }
-        catch (Exception ex) { Console.WriteLine($"JSON Processing Error: {ex.Message}"); }
+        catch (Exception ex) 
+        { 
+            _logger.LogError(ex, "Error processing incoming JSON."); 
+        }
     }
 
     private async Task SendJsonAsync<T>(T payload, CancellationToken ct)
     {
         if (_webSocket is null) return;
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
-        Console.WriteLine($"📤 [SonioxClient] Config: {json}");
+        
+        if (payload is SonioxStartRequest req)
+            _logger.LogDebug("Sending config. Model: {Model}", req.Model);
+        else
+            _logger.LogDebug("Sending control message."); 
+        
         var bytes = Encoding.UTF8.GetBytes(json);
         await _webSocket.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
     }

@@ -1,3 +1,5 @@
+using Glu_Library.Models;
+
 namespace Glu_Library.Configuration;
 
 /// <summary>
@@ -14,14 +16,15 @@ public class SonioxWebSocketOptions
         "wss://stt-rt.soniox.com/transcribe-websocket";
 
     /// <summary>
-    /// Soniox API authentication token.
+    /// Soniox API authentication token. Must be loaded from a secure source (e.g., Environment Variable, Key Vault).
     /// </summary>
-    public string Token { get; set; } = string.Empty;
+    public string Token { get; set; } = null!; // Enforce explicit configuration, not hardcoded default.
 
     /// <summary>
     /// Speech recognition model to use.
+    /// Default is <see cref="SonioxModels.RealTimeV3"/>.
     /// </summary>
-    public string Model { get; set; } = "stt-rt-preview";
+    public string Model { get; set; } = SonioxModels.RealTimeV3;
 
     /// <summary>
     /// Enables speaker diarization.

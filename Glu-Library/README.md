@@ -1,19 +1,19 @@
 <div align="center">
   <img src="https://via.placeholder.com/150/512BD4/FFFFFF?text=Glu+Lib" alt="Glu Library Logo" width="150" height="150">
-  
-  # Glu Library
-  
-  ### The Enterprise .NET Client for Soniox AI
-  
-  **Robust, Resilient & Secure Middleware for Real-Time Speech Recognition**
-  
-  [![.NET](https://img.shields.io/badge/.NET-8.0%2F9.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-  [![NuGet](https://img.shields.io/badge/NuGet-v1.0.0-blue?logo=nuget&logoColor=white)](https://www.nuget.org/)
-  [![Architecture](https://img.shields.io/badge/Architecture-Direct_Stream-brightgreen?logo=architecture&logoColor=white)]()
-  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-  [![Resilience](https://img.shields.io/badge/Resilience-Auto--Reconnect-orange)]()
-  [![Built By](https://img.shields.io/badge/Built%20By-Kiroku-black?logo=github)](https://kiroku.io)
-  
+
+# Glu Library
+
+### The Enterprise .NET Client for Soniox AI
+
+**Robust, Resilient & Secure Middleware for Real-Time Speech Recognition**
+
+[![.NET](https://img.shields.io/badge/.NET-8.0%2F9.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![NuGet](https://img.shields.io/badge/NuGet-v1.0.0-blue?logo=nuget&logoColor=white)](https://www.nuget.org/)
+[![Architecture](https://img.shields.io/badge/Architecture-Direct_Stream-brightgreen?logo=architecture&logoColor=white)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Resilience](https://img.shields.io/badge/Resilience-Auto--Reconnect-orange)]()
+[![Built By](https://img.shields.io/badge/Built%20By-Kiroku-black?logo=github)](https://kiroku.io)
+
 </div>
 
 ---
@@ -27,9 +27,9 @@
 - [Quick Start](#-quick-start)
 - [Configuration](#-configuration)
 - [Advanced Features](#-advanced-features)
-  - [File Upload (REST)](#file-upload-rest)
-  - [Streaming (WebSocket)](#streaming-websocket)
-  - [Speaker Diarization](#speaker-diarization)
+    - [File Upload (REST)](#file-upload-rest)
+    - [Streaming (WebSocket)](#streaming-websocket)
+    - [Speaker Diarization](#speaker-diarization)
 - [Dependencies](#-dependencies)
 
 ---

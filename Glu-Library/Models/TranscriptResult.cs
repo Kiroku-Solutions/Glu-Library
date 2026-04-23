@@ -13,6 +13,12 @@ public class TranscriptResult
     public string Text { get; set; } = string.Empty;
 
     /// <summary>
+    /// Holds the provisional (non-final) text for the current turn.
+    /// This allows the UI to display the "growing" sentence within the same card.
+    /// </summary>
+    public string PartialText { get; set; } = string.Empty;
+
+    /// <summary>
     /// Indicates whether this result is final (confirmed text) or partial (provisional text).
     /// </summary>
     public bool IsFinal { get; set; }
@@ -37,4 +43,10 @@ public class TranscriptResult
     /// Essential for UI filtering or routing to specific translation models.
     /// </summary>
     public string? DetectedLanguage { get; set; }
+
+    /// <summary>
+    /// The translation status of this result: "original", "translation", or null.
+    /// Used by the UI to route text to the correct column in translation split view.
+    /// </summary>
+    public string? TranslationStatus { get; set; }
 }
