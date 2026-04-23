@@ -40,4 +40,4 @@ jobs:
       - name: Publish to GitHub Packages
         # Sube todos los .nupkg generados en la carpeta 'out'
         # Se usa GITHUB_TOKEN que GitHub genera automáticamente para el job
-        run: dotnet nuget push "./out/*.nupkg"
+        run: dotnet nuget push "./out/*.nupkg" --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
